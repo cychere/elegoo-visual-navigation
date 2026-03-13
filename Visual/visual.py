@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 import math
+import socket
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 
 import cv2
 import numpy as np
@@ -52,6 +55,7 @@ class Settings:
     smoothing: float = 0.2
     report_hz: float = 5.0
     reconnect_delay_s: float = 1.0
+    stream_timeout_s: float = 5.0
     show_preview: bool = True
     json_output: bool = False
     servo_step_deg: float = 2.0
@@ -74,6 +78,7 @@ SETTINGS = Settings(
     smoothing=0.2,
     report_hz=5.0,
     reconnect_delay_s=1.0,
+    stream_timeout_s=5.0,
     show_preview=True,
     json_output=False,
     servo_step_deg=2.0,
@@ -110,6 +115,45 @@ class ServoAngleSource:
         self._fixed_angle_deg = clamp(self._fixed_angle_deg + delta_deg, 0.0, 180.0)
         self._cached_angle_deg = self._fixed_angle_deg
         return self._cached_angle_deg
+
+
+class MjpegStream:
+    def __init__(self, stream_url: str, timeout_s: float) -> None:
+        request = Request(
+            stream_url,
+            headers={"User-Agent": "elegoo-visual-navigation/1.0"},
+        )
+        self._response = urlopen(request, timeout=timeout_s)
+        self._buffer = bytearray()
+        self._chunk_size = 4096
+        self._max_buffer_size = 2 * 1024 * 1024
+
+    def read(self) -> "np.ndarray":
+        while True:
+            start = self._buffer.find(b"\xff\xd8")
+            end = self._buffer.find(b"\xff\xd9", start + 2 if start != -1 else 0)
+
+            if start != -1 and end != -1 and end > start:
+                jpeg = bytes(self._buffer[start : end + 2])
+                del self._buffer[: end + 2]
+                frame = cv2.imdecode(np.frombuffer(jpeg, dtype=np.uint8), cv2.IMREAD_COLOR)
+                if frame is not None:
+                    return frame
+
+            chunk = self._response.read(self._chunk_size)
+            if not chunk:
+                raise RuntimeError("Camera stream closed.")
+
+            self._buffer.extend(chunk)
+            if len(self._buffer) > self._max_buffer_size:
+                last_start = self._buffer.rfind(b"\xff\xd8")
+                if last_start == -1:
+                    self._buffer.clear()
+                else:
+                    del self._buffer[:last_start]
+
+    def close(self) -> None:
+        self._response.close()
 
 
 def clamp(value: float, minimum: float, maximum: float) -> float:
@@ -466,12 +510,11 @@ def emit_report(
     print(line, flush=True)
 
 
-def open_stream(stream_url: str) -> "cv2.VideoCapture":
-    capture = cv2.VideoCapture(stream_url)
-    if not capture.isOpened():
-        capture.release()
-        raise RuntimeError(f"Unable to open camera stream: {stream_url}")
-    return capture
+def open_stream(stream_url: str, timeout_s: float) -> MjpegStream:
+    try:
+        return MjpegStream(stream_url, timeout_s)
+    except (URLError, TimeoutError, socket.timeout, OSError) as exc:
+        raise RuntimeError(f"Unable to open camera stream: {stream_url} ({exc})") from exc
 
 
 def validate_settings(settings: Settings) -> Optional[str]:
@@ -481,6 +524,8 @@ def validate_settings(settings: Settings) -> Optional[str]:
         return "SETTINGS.horizontal_fov_deg must be between 0 and 179 degrees."
     if settings.report_hz <= 0.0:
         return "SETTINGS.report_hz must be positive."
+    if settings.stream_timeout_s <= 0.0:
+        return "SETTINGS.stream_timeout_s must be positive."
     if settings.servo_positive not in {"left", "right"}:
         return 'SETTINGS.servo_positive must be "left" or "right".'
     if settings.output_positive not in {"left", "right"}:
@@ -497,24 +542,32 @@ def main() -> int:
 
     detector = cv2.QRCodeDetector()
     servo_source = ServoAngleSource(settings.servo_angle_deg, settings.servo_angle_file)
-    capture: Optional["cv2.VideoCapture"] = None
+    stream: Optional[MjpegStream] = None
     smoothed_angle_deg: Optional[float] = None
     next_report_time = 0.0
 
     try:
         while True:
-            if capture is None or not capture.isOpened():
+            if stream is None:
                 try:
-                    capture = open_stream(settings.stream_url)
+                    stream = open_stream(settings.stream_url, settings.stream_timeout_s)
                 except RuntimeError as exc:
                     print(str(exc), file=sys.stderr)
                     time.sleep(settings.reconnect_delay_s)
                     continue
 
-            ok, frame = capture.read()
-            if not ok or frame is None:
-                capture.release()
-                capture = None
+            try:
+                frame = stream.read()
+            except RuntimeError as exc:
+                print(str(exc), file=sys.stderr)
+                stream.close()
+                stream = None
+                time.sleep(settings.reconnect_delay_s)
+                continue
+            except (URLError, TimeoutError, socket.timeout, OSError) as exc:
+                print(f"Camera stream read failed: {exc}", file=sys.stderr)
+                stream.close()
+                stream = None
                 time.sleep(settings.reconnect_delay_s)
                 continue
 
@@ -577,8 +630,8 @@ def main() -> int:
             if key == ord("]"):
                 servo_source.nudge(settings.servo_step_deg)
     finally:
-        if capture is not None:
-            capture.release()
+        if stream is not None:
+            stream.close()
         if settings.show_preview:
             cv2.destroyAllWindows()
 
