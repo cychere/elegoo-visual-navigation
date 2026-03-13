@@ -40,7 +40,7 @@ class Measurement:
 
 @dataclass
 class Settings:
-    stream_url: str = "http://192.168.1.42/stream"
+    stream_url: str = "http://192.168.50.48/stream"
     target_payload: Optional[str] = None
     servo_angle_deg: float = 90.0
     servo_angle_file: Optional[Path] = None
@@ -61,28 +61,7 @@ class Settings:
     servo_step_deg: float = 2.0
 
 
-# Edit these values directly instead of passing command-line arguments.
-SETTINGS = Settings(
-    stream_url="http://192.168.50.48/stream",
-    target_payload=None,
-    servo_angle_deg=90.0,
-    servo_angle_file=None,  # Example: Path("Visual/servo_angle.txt")
-    servo_center_deg=90.0,
-    servo_positive="left",  # "left" or "right"
-    output_positive="left",  # "left" or "right"
-    horizontal_fov_deg=62.2,
-    qr_size_m=None,  # Example: 0.05 for a 5 cm QR code
-    camera_forward_offset_m=0.0,
-    camera_left_offset_m=0.0,
-    min_area_px=500.0,
-    smoothing=0.2,
-    report_hz=5.0,
-    reconnect_delay_s=1.0,
-    stream_timeout_s=5.0,
-    show_preview=True,
-    json_output=False,
-    servo_step_deg=2.0,
-)
+SETTINGS = Settings()
 
 
 class ServoAngleSource:
