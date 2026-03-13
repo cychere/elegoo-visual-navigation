@@ -1,18 +1,6 @@
-#include "esp_system.h"
-#include "esp_camera.h"
-#include <WiFi.h>
+#include "ESP32.hpp"
 
 void startCameraServer();
-
-class CameraWebServer
-{
-    public:
-        void Init(void);
-
-    private:
-        const char* ssid = "Asus";
-        const char* password = "cyBer751465!";
-};
 
 void CameraWebServer::Init(void)
 {
@@ -44,23 +32,14 @@ void CameraWebServer::Init(void)
     config.jpeg_quality = 10;
     config.fb_count = 2;
 
-    // camera init
-    esp_err_t err = esp_camera_init(&config);
-    if (err != ESP_OK)
-    {
-        Serial.printf("Camera init failed with error 0x%x", err);
-        return;
-    }
+    esp_camera_init(&config);
 
     sensor_t *s = esp_camera_sensor_get();
-
     s->set_gainceiling(s, (gainceiling_t)GAINCEILING_16X);
     s->set_aec2(s, 0);
     s->set_exposure_ctrl(s, 0);
     s->set_gain_ctrl(s, 1);
     s->set_awb_gain(s, 1);
-
-    delay(800);
 
     uint64_t chipid = ESP.getEfuseMac();
     char string[10];

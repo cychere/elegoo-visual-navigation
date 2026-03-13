@@ -1,4 +1,4 @@
-#include "CameraWebServer.h"
+#include "ESP32.hpp"
 
 #define RXD2 3
 #define TXD2 40
