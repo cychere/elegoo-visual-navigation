@@ -59,7 +59,7 @@ class Settings:
 
 # Edit these values directly instead of passing command-line arguments.
 SETTINGS = Settings(
-    stream_url="http://192.168.1.42/stream",
+    stream_url="http://192.168.50.48/stream",
     target_payload=None,
     servo_angle_deg=90.0,
     servo_angle_file=None,  # Example: Path("Visual/servo_angle.txt")
