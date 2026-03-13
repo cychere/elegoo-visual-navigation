@@ -8,21 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-try:
-    import cv2
-except ImportError as exc:  # pragma: no cover - runtime dependency
-    cv2 = None
-    CV2_IMPORT_ERROR = exc
-else:
-    CV2_IMPORT_ERROR = None
-
-try:
-    import numpy as np
-except ImportError as exc:  # pragma: no cover - runtime dependency
-    np = None
-    NP_IMPORT_ERROR = exc
-else:
-    NP_IMPORT_ERROR = None
+import cv2
+import numpy as np
 
 
 @dataclass
@@ -502,19 +489,6 @@ def validate_settings(settings: Settings) -> Optional[str]:
 
 
 def main() -> int:
-    if CV2_IMPORT_ERROR is not None:
-        print(
-            f"OpenCV is required to run this program: {CV2_IMPORT_ERROR}",
-            file=sys.stderr,
-        )
-        return 1
-    if NP_IMPORT_ERROR is not None:
-        print(
-            f"NumPy is required to run this program: {NP_IMPORT_ERROR}",
-            file=sys.stderr,
-        )
-        return 1
-
     settings = SETTINGS
     validation_error = validate_settings(settings)
     if validation_error is not None:
