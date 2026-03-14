@@ -35,11 +35,19 @@ void CameraWebServer::Init(void)
     esp_camera_init(&config);
 
     sensor_t *s = esp_camera_sensor_get();
-    s->set_gainceiling(s, (gainceiling_t)GAINCEILING_16X);
-    s->set_aec2(s, 0);
-    s->set_exposure_ctrl(s, 0);
-    s->set_gain_ctrl(s, 1);
-    s->set_awb_gain(s, 1);
+
+    s->set_exposure_ctrl(s, 1);     // 开启自动曝光
+    s->set_aec2(s, 1);              // 使用改进AEC算法
+
+    s->set_aec_value(s, 300);       // 设置目标曝光值 (0-1200)
+    s->set_gain_ctrl(s, 1);         // 自动增益
+    s->set_agc_gain(s, 10);         // 限制最大增益
+
+    //s->set_gainceiling(s, (gainceiling_t)GAINCEILING_16X);
+    //s->set_aec2(s, 0);
+    //s->set_exposure_ctrl(s, 0);
+    //s->set_gain_ctrl(s, 1);
+    //s->set_awb_gain(s, 1);
 
     uint64_t chipid = ESP.getEfuseMac();
     char string[10];
