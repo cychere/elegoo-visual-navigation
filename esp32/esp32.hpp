@@ -11,8 +11,8 @@ class CameraWebServer
         void Init(void);
 
     private:
-        const char* ssid = "Asus";
-        const char* password = "cyBer751465!";
+        const char *ssid = "Asus";
+        const char *password = "cyBer751465!";
 };
 
 #endif
