@@ -1,8 +1,11 @@
 #ifndef ELEGOO_HPP
 #define ELEGOO_HPP
 
-#include <Arduino.h>
+#include <Wire.h>
 #include <Servo.h>
+#include <Arduino.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_MPU6050.h>
 
 class Motor
 {
@@ -24,15 +27,14 @@ class Motor
 class YawTracker
 {
     public:
-        void begin(float gyroZBiasRadPerSec = 0.0f);
-        void reset();
-        void update(float gyroZRadPerSec);
-        float getYawDegrees() const;
+        void init(float gyroBias = 0.0f);
+        void update(float gyroZ);
+        float getYaw() const;
 
     private:
         float yawDeg = 0.0f;
-        float gyroZBias = 0.0f;
-        unsigned long lastUpdateMicros = 0;
+        float bias = 0.0f;
+        unsigned long lastUpdate = 0;
 };
 
 class MyServo
