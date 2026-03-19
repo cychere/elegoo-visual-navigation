@@ -1,4 +1,4 @@
-#include "../elegoo/elegoo.hpp"
+#include "elegoo.hpp"
 
 void MyServo::set(unsigned int angle)
 {
