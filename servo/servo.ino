@@ -1,4 +1,4 @@
-#include "servo.hpp"
+#include "../elegoo/elegoo.hpp"
 
 MyServo servo;
 

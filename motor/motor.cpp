@@ -1,4 +1,4 @@
-#include "motor.hpp"
+#include "../elegoo/elegoo.hpp"
 
 void Motor::init()
 {
