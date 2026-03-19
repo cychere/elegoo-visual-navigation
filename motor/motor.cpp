@@ -1,4 +1,4 @@
-#include "Motor.hpp"
+#include "motor.hpp"
 
 void Motor::init()
 {

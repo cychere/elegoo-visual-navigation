@@ -1,4 +1,4 @@
-#include "Servo.hpp"
+#include "servo.hpp"
 
 void MyServo::set(unsigned int angle)
 {

@@ -1,4 +1,4 @@
-#include "ESP32.hpp"
+#include "esp32.hpp"
 
 void startCameraServer();
 

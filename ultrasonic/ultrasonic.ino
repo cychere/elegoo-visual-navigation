@@ -1,5 +1,5 @@
 #include <avr/wdt.h>
-#include "Ultrasonic.hpp"
+#include "ultrasonic.hpp"
 
 Ultrasonic sonic;
 

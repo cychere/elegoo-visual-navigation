@@ -1,5 +1,5 @@
 #include <avr/wdt.h>
-#include "Motor.hpp"
+#include "motor.hpp"
 
 Motor motor;
 

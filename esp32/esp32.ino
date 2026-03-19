@@ -1,4 +1,4 @@
-#include "ESP32.hpp"
+#include "esp32.hpp"
 
 #define RXD2 3
 #define TXD2 40
