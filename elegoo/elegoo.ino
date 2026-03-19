@@ -167,7 +167,7 @@ namespace
 
 void setup()
 {
-    Serial.init(Serial_Baud_Rate);
+    Serial.begin(Serial_Baud_Rate);
     Serial.setTimeout(10);
 
     motor.init();
