@@ -61,9 +61,6 @@ class Settings:
     servo_step_deg: float = 2.0
 
 
-SETTINGS = Settings()
-
-
 class ServoAngleSource:
     def __init__(self, fixed_angle_deg: float, path: Optional[Path]) -> None:
         self._fixed_angle_deg = fixed_angle_deg
@@ -496,31 +493,11 @@ def open_stream(stream_url: str, timeout_s: float) -> MjpegStream:
         raise RuntimeError(f"Unable to open camera stream: {stream_url} ({exc})") from exc
 
 
-def validate_settings(settings: Settings) -> Optional[str]:
-    if not settings.stream_url:
-        return "SETTINGS.stream_url must not be empty."
-    if settings.horizontal_fov_deg <= 0.0 or settings.horizontal_fov_deg >= 179.0:
-        return "SETTINGS.horizontal_fov_deg must be between 0 and 179 degrees."
-    if settings.report_hz <= 0.0:
-        return "SETTINGS.report_hz must be positive."
-    if settings.stream_timeout_s <= 0.0:
-        return "SETTINGS.stream_timeout_s must be positive."
-    if settings.servo_positive not in {"left", "right"}:
-        return 'SETTINGS.servo_positive must be "left" or "right".'
-    if settings.output_positive not in {"left", "right"}:
-        return 'SETTINGS.output_positive must be "left" or "right".'
-    return None
-
-
 def main() -> int:
-    settings = SETTINGS
-    validation_error = validate_settings(settings)
-    if validation_error is not None:
-        print(validation_error, file=sys.stderr)
-        return 1
+    SETTINGS = Settings()
 
     detector = cv2.QRCodeDetector()
-    servo_source = ServoAngleSource(settings.servo_angle_deg, settings.servo_angle_file)
+    servo_source = ServoAngleSource(SETTINGS.servo_angle_deg, SETTINGS.servo_angle_file)
     stream: Optional[MjpegStream] = None
     smoothed_angle_deg: Optional[float] = None
     next_report_time = 0.0
@@ -529,10 +506,10 @@ def main() -> int:
         while True:
             if stream is None:
                 try:
-                    stream = open_stream(settings.stream_url, settings.stream_timeout_s)
+                    stream = open_stream(SETTINGS.stream_url, SETTINGS.stream_timeout_s)
                 except RuntimeError as exc:
                     print(str(exc), file=sys.stderr)
-                    time.sleep(settings.reconnect_delay_s)
+                    time.sleep(SETTINGS.reconnect_delay_s)
                     continue
 
             try:
@@ -541,20 +518,20 @@ def main() -> int:
                 print(str(exc), file=sys.stderr)
                 stream.close()
                 stream = None
-                time.sleep(settings.reconnect_delay_s)
+                time.sleep(SETTINGS.reconnect_delay_s)
                 continue
             except (URLError, TimeoutError, socket.timeout, OSError) as exc:
                 print(f"Camera stream read failed: {exc}", file=sys.stderr)
                 stream.close()
                 stream = None
-                time.sleep(settings.reconnect_delay_s)
+                time.sleep(SETTINGS.reconnect_delay_s)
                 continue
 
             frame_height, frame_width = frame.shape[:2]
             servo_angle_deg = servo_source.read()
             detections = detect_qr_codes(detector, frame)
             target = select_detection(
-                detections, settings.target_payload, settings.min_area_px
+                detections, SETTINGS.target_payload, SETTINGS.min_area_px
             )
             measurement: Optional[Measurement] = None
 
@@ -563,19 +540,19 @@ def main() -> int:
                     detection=target,
                     frame_width=frame_width,
                     frame_height=frame_height,
-                    horizontal_fov_deg=settings.horizontal_fov_deg,
+                    horizontal_fov_deg=SETTINGS.horizontal_fov_deg,
                     servo_angle_deg=servo_angle_deg,
-                    servo_center_deg=settings.servo_center_deg,
-                    servo_positive_left=settings.servo_positive == "left",
-                    output_positive_left=settings.output_positive == "left",
-                    qr_size_m=settings.qr_size_m,
-                    camera_forward_offset_m=settings.camera_forward_offset_m,
-                    camera_left_offset_m=settings.camera_left_offset_m,
+                    servo_center_deg=SETTINGS.servo_center_deg,
+                    servo_positive_left=SETTINGS.servo_positive == "left",
+                    output_positive_left=SETTINGS.output_positive == "left",
+                    qr_size_m=SETTINGS.qr_size_m,
+                    camera_forward_offset_m=SETTINGS.camera_forward_offset_m,
+                    camera_left_offset_m=SETTINGS.camera_left_offset_m,
                 )
                 measurement.angle_deg_left_positive = smooth_angle_deg(
                     smoothed_angle_deg,
                     measurement.angle_deg_left_positive,
-                    settings.smoothing,
+                    SETTINGS.smoothing,
                 )
                 smoothed_angle_deg = measurement.angle_deg_left_positive
 
@@ -584,12 +561,12 @@ def main() -> int:
                 emit_report(
                     measurement=measurement,
                     servo_angle_deg=servo_angle_deg,
-                    output_positive_left=settings.output_positive == "left",
-                    json_output=settings.json_output,
+                    output_positive_left=SETTINGS.output_positive == "left",
+                    json_output=SETTINGS.json_output,
                 )
-                next_report_time = current_time + (1.0 / settings.report_hz)
+                next_report_time = current_time + (1.0 / SETTINGS.report_hz)
 
-            if not settings.show_preview:
+            if not SETTINGS.show_preview:
                 continue
 
             preview = draw_overlay(
@@ -597,21 +574,21 @@ def main() -> int:
                 detection=target,
                 measurement=measurement,
                 servo_angle_deg=servo_angle_deg,
-                stream_url=settings.stream_url,
-                output_positive_left=settings.output_positive == "left",
+                stream_url=SETTINGS.stream_url,
+                output_positive_left=SETTINGS.output_positive == "left",
             )
             cv2.imshow("Visual Navigation", preview)
             key = cv2.waitKey(1) & 0xFF
             if key in (27, ord("q")):
                 break
             if key == ord("["):
-                servo_source.nudge(-settings.servo_step_deg)
+                servo_source.nudge(-SETTINGS.servo_step_deg)
             if key == ord("]"):
-                servo_source.nudge(settings.servo_step_deg)
+                servo_source.nudge(SETTINGS.servo_step_deg)
     finally:
         if stream is not None:
             stream.close()
-        if settings.show_preview:
+        if SETTINGS.show_preview:
             cv2.destroyAllWindows()
 
     return 0
