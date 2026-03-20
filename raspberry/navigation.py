@@ -1,24 +1,15 @@
 from __future__ import annotations
 
-import math
-import socket
+import cv2
 import sys
 import time
-from dataclasses import dataclass, field
+import math
+import socket
+import numpy as np
 from typing import Optional
 from urllib.error import URLError
+from dataclasses import dataclass, field
 from urllib.request import Request, urlopen
-
-try:
-    import cv2
-except ModuleNotFoundError:
-    cv2 = None
-
-try:
-    import numpy as np
-except ModuleNotFoundError:
-    np = None
-
 from arduino_io import ArduinoLink, SensorReading
 from motor_mixer import DriveCommand, MixerSettings, WheelCommand, mix_drive_command
 

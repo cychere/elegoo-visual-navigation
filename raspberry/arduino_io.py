@@ -1,13 +1,9 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+import serial
 from typing import Optional
-
-try:
-    import serial
-except ModuleNotFoundError:
-    serial = None
+from dataclasses import dataclass
 
 
 def clamp(value: int, minimum: int, maximum: int) -> int:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Optional
+from dataclasses import dataclass
 
 
 def clamp(value: float, minimum: float, maximum: float) -> float:
