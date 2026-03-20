@@ -17,7 +17,6 @@ namespace
     YawTracker yawTracker;
 
     float gyroBias = 0.0f;
-    bool mpuReady = false;
     unsigned long nextLoopUs = 0;
     unsigned long lastMotorCommandMs = 0;
     size_t commandBufferLength = 0;
@@ -54,12 +53,7 @@ namespace
 
     bool initMpu()
     {
-        if (!mpu.begin())
-        {
-            Serial.println(F("MPU6050 init failed"));
-            return false;
-        }
-
+        mpu.begin()
         mpu.setGyroRange(MPU6050_RANGE_250_DEG);
         mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
         mpu.setAccelerometerRange(MPU6050_RANGE_2_G);
@@ -77,11 +71,6 @@ namespace
 
     void refreshYaw()
     {
-        if (!mpuReady)
-        {
-            return;
-        }
-
         sensors_event_t acceleration, gyro, temperature;
         mpu.getEvent(&acceleration, &gyro, &temperature);
         yawTracker.update(gyro.gyro.z);
@@ -185,7 +174,7 @@ void setup()
     motor.init();
     ultrasonic.init();
     lastMotorCommandMs = millis();
-    mpuReady = initMpu();
+    initMpu();
     nextLoopUs = micros() + Loop_Period_Us;
 }
 
