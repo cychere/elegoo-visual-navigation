@@ -17,6 +17,7 @@ namespace
     YawTracker yawTracker;
 
     float gyroBias = 0.0f;
+    bool mpuReady = false;
     unsigned long nextLoopUs = 0;
     unsigned long lastMotorCommandMs = 0;
     size_t commandBufferLength = 0;
@@ -53,6 +54,12 @@ namespace
 
     bool initMpu()
     {
+        if (!mpu.begin())
+        {
+            Serial.println(F("MPU6050 init failed"));
+            return false;
+        }
+
         mpu.setGyroRange(MPU6050_RANGE_250_DEG);
         mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
         mpu.setAccelerometerRange(MPU6050_RANGE_2_G);
@@ -62,7 +69,7 @@ namespace
         gyroBias = calibrateGyro();
         yawTracker.init(gyroBias);
 
-        Serial.print("Gyro Z bias: ");
+        Serial.print(F("Gyro Z bias: "));
         Serial.println(gyroBias, 6);
 
         return true;
@@ -70,6 +77,11 @@ namespace
 
     void refreshYaw()
     {
+        if (!mpuReady)
+        {
+            return;
+        }
+
         sensors_event_t acceleration, gyro, temperature;
         mpu.getEvent(&acceleration, &gyro, &temperature);
         yawTracker.update(gyro.gyro.z);
@@ -96,7 +108,7 @@ namespace
 
     void sendReading(uint16_t distanceCm)
     {
-        Serial.print("SENSOR ");
+        Serial.print(F("SENSOR "));
         Serial.print(yawTracker.getYaw(), Yaw_Print_Precision);
         Serial.print(' ');
         Serial.println(distanceCm);
@@ -141,7 +153,7 @@ namespace
 
                 if (commandBufferLength > 0 && !handleCommand(commandBuffer))
                 {
-                    Serial.println("Unknown command");
+                    Serial.println(F("Unknown command"));
                 }
 
                 commandBufferLength = 0;
@@ -173,7 +185,7 @@ void setup()
     motor.init();
     ultrasonic.init();
     lastMotorCommandMs = millis();
-    initMpu();
+    mpuReady = initMpu();
     nextLoopUs = micros() + Loop_Period_Us;
 }
 
