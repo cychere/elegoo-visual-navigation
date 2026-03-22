@@ -16,7 +16,7 @@ from motor_mixer import DriveCommand, MixerSettings, WheelCommand, mix_drive_com
 
 @dataclass(slots=True)
 class Detection:
-    payload: str
+    marker_id: int
     corners: "np.ndarray"
     center_x: float
     center_y: float
@@ -26,7 +26,7 @@ class Detection:
 @dataclass(slots=True)
 class VisualMeasurement:
     angle_deg: float
-    qr_payload: str
+    marker_id: int
     center_x: float
     center_y: float
     distance_m: Optional[float]
@@ -46,8 +46,11 @@ class Settings:
     serial_port: str = "/dev/ttyUSB0"
     baud_rate: int = 115200
     stream_url: str = "http://192.168.50.48/stream"
+    target_marker_id: Optional[int] = None
     target_payload: Optional[str] = None
+    aruco_dictionary_name: str = "DICT_4X4_50"
     horizontal_fov_deg: float = 62.2
+    marker_size_m: Optional[float] = None
     qr_size_m: Optional[float] = None
     camera_forward_offset_m: float = 0.0
     camera_left_offset_m: float = 0.0
@@ -147,80 +150,114 @@ def build_camera_matrix(
     )
 
 
-def detect_qr_codes(detector: "cv2.QRCodeDetector", frame: "np.ndarray") -> list[Detection]:
+@dataclass(slots=True)
+class ArucoDetectorBundle:
+    dictionary: object
+    parameters: object
+    detector: Optional[object]
+
+
+def build_aruco_detector(dictionary_name: str) -> ArucoDetectorBundle:
+    if not hasattr(cv2, "aruco"):
+        raise ModuleNotFoundError(
+            "ArUco support requires OpenCV's contrib modules. Install `opencv-contrib-python`."
+        )
+
+    aruco = cv2.aruco
+    try:
+        dictionary_id = getattr(aruco, dictionary_name)
+    except AttributeError as exc:
+        raise ValueError(f"Unknown ArUco dictionary: {dictionary_name}") from exc
+
+    dictionary = aruco.getPredefinedDictionary(dictionary_id)
+    if hasattr(aruco, "DetectorParameters"):
+        parameters = aruco.DetectorParameters()
+    else:
+        parameters = aruco.DetectorParameters_create()
+
+    detector = None
+    if hasattr(aruco, "ArucoDetector"):
+        detector = aruco.ArucoDetector(dictionary, parameters)
+
+    return ArucoDetectorBundle(
+        dictionary=dictionary,
+        parameters=parameters,
+        detector=detector,
+    )
+
+
+def configured_target_marker_id(settings: Settings) -> Optional[int]:
+    if settings.target_marker_id is not None:
+        return settings.target_marker_id
+
+    if settings.target_payload is None:
+        return None
+
+    try:
+        return int(settings.target_payload)
+    except ValueError:
+        return None
+
+
+def configured_marker_size_m(settings: Settings) -> Optional[float]:
+    if settings.marker_size_m is not None:
+        return settings.marker_size_m
+    return settings.qr_size_m
+
+
+def detect_aruco_markers(
+    detector_bundle: ArucoDetectorBundle, frame: "np.ndarray"
+) -> list[Detection]:
     detections: list[Detection] = []
 
-    try:
-        ok, decoded_info, points, _ = detector.detectAndDecodeMulti(frame)
-    except (AttributeError, ValueError, cv2.error):
-        ok, decoded_info, points = False, [], None
-
-    if ok and points is not None:
-        for index, corners in enumerate(points):
-            corner_array = np.asarray(corners, dtype=np.float32).reshape(4, 2)
-            center = corner_array.mean(axis=0)
-            detections.append(
-                Detection(
-                    payload=decoded_info[index] if index < len(decoded_info) else "",
-                    corners=corner_array,
-                    center_x=float(center[0]),
-                    center_y=float(center[1]),
-                    area_px=abs(float(cv2.contourArea(corner_array))),
-                )
-            )
-
-    if detections:
-        return detections
-
-    try:
-        payload, points, _ = detector.detectAndDecode(frame)
-    except cv2.error:
-        payload, points = "", None
-
-    if points is None:
-        return detections
-
-    corner_array = np.asarray(points, dtype=np.float32).reshape(4, 2)
-    center = corner_array.mean(axis=0)
-    detections.append(
-        Detection(
-            payload=payload,
-            corners=corner_array,
-            center_x=float(center[0]),
-            center_y=float(center[1]),
-            area_px=abs(float(cv2.contourArea(corner_array))),
+    if detector_bundle.detector is not None:
+        corners_list, ids, _rejected = detector_bundle.detector.detectMarkers(frame)
+    else:
+        corners_list, ids, _rejected = cv2.aruco.detectMarkers(
+            frame,
+            detector_bundle.dictionary,
+            parameters=detector_bundle.parameters,
         )
-    )
+
+    if ids is None:
+        return detections
+
+    marker_ids = np.asarray(ids, dtype=np.int32).reshape(-1)
+    for marker_id, corners in zip(marker_ids, corners_list):
+        corner_array = np.asarray(corners, dtype=np.float32).reshape(4, 2)
+        center = corner_array.mean(axis=0)
+        detections.append(
+            Detection(
+                marker_id=int(marker_id),
+                corners=corner_array,
+                center_x=float(center[0]),
+                center_y=float(center[1]),
+                area_px=abs(float(cv2.contourArea(corner_array))),
+            )
+        )
     return detections
 
 
 def select_detection(
-    detections: list[Detection], target_payload: Optional[str], min_area_px: float
+    detections: list[Detection], target_marker_id: Optional[int], min_area_px: float
 ) -> Optional[Detection]:
     filtered = [detection for detection in detections if detection.area_px >= min_area_px]
     if not filtered:
         return None
 
-    if target_payload:
-        exact_matches = [d for d in filtered if d.payload == target_payload]
-        if exact_matches:
-            return max(exact_matches, key=lambda item: item.area_px)
-
-        partial_matches = [d for d in filtered if target_payload in d.payload]
-        if partial_matches:
-            return max(partial_matches, key=lambda item: item.area_px)
-
-        return None
+    if target_marker_id is not None:
+        exact_matches = [d for d in filtered if d.marker_id == target_marker_id]
+        return max(exact_matches, key=lambda item: item.area_px) if exact_matches else None
 
     return max(filtered, key=lambda item: item.area_px)
 
 
-def estimate_target_pose(
+def estimate_marker_pose(
     detection: Detection,
-    qr_size_m: float,
+    marker_size_m: float,
     camera_matrix: "np.ndarray",
 ) -> tuple[Optional[float], Optional[float], Optional[float]]:
-    half_size = qr_size_m / 2.0
+    half_size = marker_size_m / 2.0
     object_points = np.array(
         [
             [-half_size, -half_size, 0.0],
@@ -258,7 +295,7 @@ def measure_target(
     frame_width: int,
     frame_height: int,
     horizontal_fov_deg: float,
-    qr_size_m: Optional[float],
+    marker_size_m: Optional[float],
     camera_forward_offset_m: float,
     camera_left_offset_m: float,
 ) -> VisualMeasurement:
@@ -267,10 +304,10 @@ def measure_target(
     angle_deg = math.degrees(math.atan2(frame_center_x - detection.center_x, focal_px))
     distance_m = None
 
-    if qr_size_m is not None and qr_size_m > 0.0:
+    if marker_size_m is not None and marker_size_m > 0.0:
         camera_matrix = build_camera_matrix(frame_width, frame_height, horizontal_fov_deg)
-        pose_forward_m, pose_left_m, pose_distance_m = estimate_target_pose(
-            detection, qr_size_m, camera_matrix
+        pose_forward_m, pose_left_m, pose_distance_m = estimate_marker_pose(
+            detection, marker_size_m, camera_matrix
         )
         if (
             pose_forward_m is not None
@@ -284,7 +321,7 @@ def measure_target(
 
     return VisualMeasurement(
         angle_deg=wrap_degrees(angle_deg),
-        qr_payload=detection.payload,
+        marker_id=detection.marker_id,
         center_x=detection.center_x,
         center_y=detection.center_y,
         distance_m=distance_m,
@@ -369,11 +406,10 @@ def draw_overlay(
         lines.append("Ultrasonic: unavailable")
 
     if measurement is not None:
-        lines.append(f"QR angle: {measurement.angle_deg:+6.1f} deg")
+        lines.append(f"Marker angle: {measurement.angle_deg:+6.1f} deg")
         if measurement.distance_m is not None:
-            lines.append(f"QR distance: {measurement.distance_m:.2f} m")
-        if measurement.qr_payload:
-            lines.append(f"QR: {measurement.qr_payload}")
+            lines.append(f"Marker distance: {measurement.distance_m:.2f} m")
+        lines.append(f"Marker ID: {measurement.marker_id}")
 
     y = 24
     for line in lines:
@@ -416,9 +452,9 @@ def emit_report(decision: ControlDecision, measurement: Optional[VisualMeasureme
         parts.append(f"distance_cm={decision.sensor.distance_cm}")
 
     if measurement is not None and measurement.distance_m is not None:
-        parts.append(f"qr_distance_m={measurement.distance_m:.3f}")
-    if measurement is not None and measurement.qr_payload:
-        parts.append(f"qr={measurement.qr_payload}")
+        parts.append(f"marker_distance_m={measurement.distance_m:.3f}")
+    if measurement is not None:
+        parts.append(f"marker_id={measurement.marker_id}")
 
     print(" ".join(parts), flush=True)
 
@@ -479,12 +515,14 @@ def main() -> int:
         )
 
     settings = Settings()
-    detector = cv2.QRCodeDetector()
+    detector = build_aruco_detector(settings.aruco_dictionary_name)
     stream: Optional[MjpegStream] = None
     smoothed_angle_deg: Optional[float] = None
     remembered_target_heading_deg: Optional[float] = None
     remembered_at_s = 0.0
     next_report_time = 0.0
+    target_marker_id = configured_target_marker_id(settings)
+    marker_size_m = configured_marker_size_m(settings)
 
     with ArduinoLink(port=settings.serial_port, baud_rate=settings.baud_rate) as arduino:
         latest_sensor = arduino.wait_for_reading()
@@ -520,10 +558,10 @@ def main() -> int:
                     continue
 
                 frame_height, frame_width = frame.shape[:2]
-                detections = detect_qr_codes(detector, frame)
+                detections = detect_aruco_markers(detector, frame)
                 target = select_detection(
                     detections,
-                    settings.target_payload,
+                    target_marker_id,
                     settings.min_area_px,
                 )
 
@@ -534,7 +572,7 @@ def main() -> int:
                         frame_width=frame_width,
                         frame_height=frame_height,
                         horizontal_fov_deg=settings.horizontal_fov_deg,
-                        qr_size_m=settings.qr_size_m,
+                        marker_size_m=marker_size_m,
                         camera_forward_offset_m=settings.camera_forward_offset_m,
                         camera_left_offset_m=settings.camera_left_offset_m,
                     )
