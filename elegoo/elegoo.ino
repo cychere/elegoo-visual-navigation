@@ -24,16 +24,9 @@ namespace
 
     void setMotor(int left, int right)
     {
-        left = constrain(left, -255, 255);
-        right = constrain(right, -255, 255);
-
-        Motor::Direction directionL = (left >= 0) ? Motor::Forward : Motor::Backward;
-        Motor::Direction directionR = (right >= 0) ? Motor::Forward : Motor::Backward;
-
-        uint8_t speedL = static_cast<uint8_t>(abs(left));
-        uint8_t speedR = static_cast<uint8_t>(abs(right));
-
-        motor.set(directionL, speedL, directionR, speedR);
+        uint16_t speedL = static_cast<uint16_t>(left);
+        uint16_t speedR = static_cast<uint16_t>(right);
+        motor.set(speedL, speedR);
     }
 
     float calibrateGyro()
@@ -130,11 +123,6 @@ namespace
         while (Serial.available() > 0)
         {
             char incoming = static_cast<char>(Serial.read());
-
-            if (incoming == '\r')
-            {
-                continue;
-            }
 
             if (incoming == '\n')
             {

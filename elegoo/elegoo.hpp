@@ -13,8 +13,7 @@ class Motor
         enum Direction {Forward, Backward};
 
         void init();
-        void set(Direction direction_L, uint8_t speed_L,
-                 Direction direction_R, uint8_t speed_R);
+        void set(uint16_t speed_L, uint16_t speed_R);
 
     private:
         static constexpr uint8_t Motor_PWMA = 5;
@@ -43,12 +42,9 @@ class MyServo
         void set(unsigned int angle);
 
     private:
-        static constexpr uint8_t Min_Angle = 0;
-        static constexpr uint8_t Max_Angle = 180;
         static constexpr uint8_t Servo_PIN = 10;
-
-        Servo servo_;
         bool attached_ = false;
+        Servo servo_;
 };
 
 class Ultrasonic
