@@ -10,8 +10,6 @@
 class Motor
 {
     public:
-        enum Direction {Forward, Backward};
-
         void init();
         void set(int16_t speed_L, int16_t speed_R);
 

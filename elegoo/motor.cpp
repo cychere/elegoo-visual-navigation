@@ -19,9 +19,9 @@ void Motor::set(int16_t speed_L, int16_t speed_R)
 
     if (speed_L >= 0) digitalWrite(Motor_AIN1, LOW);
     else digitalWrite(Motor_AIN1, HIGH);
-    analogWrite(Motor_PWMA, speed_L);
+    analogWrite(Motor_PWMA, abs(speed_L));
 
     if (speed_R >= 0) digitalWrite(Motor_BIN1, LOW);
     else digitalWrite(Motor_BIN1, HIGH);
-    analogWrite(Motor_PWMB, speed_R);
+    analogWrite(Motor_PWMB, abs(speed_R));
 }
