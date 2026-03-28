@@ -13,7 +13,7 @@ void Motor::init()
     digitalWrite(Motor_STBY, LOW);
 }
 
-void Motor::set(uint16_t speed_L, uint16_t speed_R)
+void Motor::set(int16_t speed_L, int16_t speed_R)
 {
     digitalWrite(Motor_STBY, HIGH);
 

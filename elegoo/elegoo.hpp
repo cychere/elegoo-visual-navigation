@@ -13,7 +13,7 @@ class Motor
         enum Direction {Forward, Backward};
 
         void init();
-        void set(uint16_t speed_L, uint16_t speed_R);
+        void set(int16_t speed_L, int16_t speed_R);
 
     private:
         static constexpr uint8_t Motor_PWMA = 5;
