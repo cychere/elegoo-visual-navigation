@@ -11,7 +11,7 @@ from urllib.error import URLError
 from dataclasses import dataclass, field
 from urllib.request import Request, urlopen
 from arduino_io import ArduinoLink, SensorReading
-from motor_mixer import DriveCommand, MixerSettings, WheelCommand, mix_drive_command
+from motor_mixer import RobotCommand, MixerSettings, WheelCommand, mix_drive_command
 
 
 @dataclass(slots=True)
@@ -34,7 +34,7 @@ class VisualMeasurement:
 
 @dataclass(slots=True)
 class ControlDecision:
-    drive: DriveCommand
+    drive: RobotCommand
     wheels: WheelCommand
     sensor: Optional[SensorReading]
     target_visible: bool
@@ -474,11 +474,11 @@ def compute_decision(
     now_s: float,
     settings: Settings,
 ) -> ControlDecision:
-    drive = DriveCommand(angle_deg=0.0, speed=0.0)
+    drive = RobotCommand(angle_deg=0.0, speed=0.0)
     target_visible = measurement is not None
 
     if measurement is not None:
-        drive = DriveCommand(
+        drive = RobotCommand(
             angle_deg=measurement.angle_deg,
             speed=speed_from_target(measurement, sensor, settings),
         )
@@ -487,7 +487,7 @@ def compute_decision(
         and remembered_target_heading_deg is not None
         and now_s - remembered_at_s <= settings.target_memory_s
     ):
-        drive = DriveCommand(
+        drive = RobotCommand(
             angle_deg=wrap_degrees(remembered_target_heading_deg - sensor.yaw_deg),
             speed=0.0,
         )
