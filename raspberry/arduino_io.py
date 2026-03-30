@@ -24,7 +24,7 @@ class ArduinoLink:
         startup_delay_s: float = 2.0,
     ) -> None:
         self._serial = serial.Serial(port, baud_rate, timeout=timeout_s)
-        self._latest_reading = SensorReading(0, 0, 0)
+        self._latest_reading: Optional[SensorReading] = None
         time.sleep(startup_delay_s)
         self._serial.reset_input_buffer()
 
@@ -51,26 +51,20 @@ class ArduinoLink:
             timestamp_s=time.time(),
         )
 
-    def read_latest(self, max_lines: int = 60) -> Optional[SensorReading]:
-        latest = self._latest_reading
+    def read_latest(self, max_lines: int = 30) -> Optional[SensorReading]:
         lines_read = 0
 
         while lines_read < max_lines and self._serial.in_waiting > 0:
             raw = self._serial.readline()
             lines_read += 1
-            latest = self._parse_line(raw.decode("ascii", errors="ignore").strip())
+            self._latest_reading = self._parse_line(raw.decode("ascii", errors="ignore").strip())
 
-        self._latest_reading = latest
-        return latest
+        return self._latest_reading
 
     def wait_for_reading(self, timeout_s: float = 2.0) -> SensorReading:
         deadline = time.monotonic() + timeout_s
 
         while time.monotonic() < deadline:
-            reading = self.read_latest()
-            if reading is not None:
-                return reading
-
             raw = self._serial.readline()
             if not raw:
                 continue
