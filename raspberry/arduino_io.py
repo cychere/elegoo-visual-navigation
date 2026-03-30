@@ -1,5 +1,6 @@
 import time
 import serial
+from typing import Optional
 from dataclasses import dataclass
 
 
@@ -36,7 +37,9 @@ class ArduinoLink:
     def __exit__(self, exc_type, exc, tb) -> None:
         self.close()
 
-    def _parse_line(self, line: str) -> SensorReading:
+    def _parse_line(self, line: str) -> Optional[SensorReading]:
+        if not line.startswith("SENSOR "):
+            return None
 
         parts = line.split()
         yaw = float(parts[1])
@@ -48,7 +51,7 @@ class ArduinoLink:
             timestamp_s=time.time(),
         )
 
-    def read_latest(self, max_lines: int = 60) -> SensorReading:
+    def read_latest(self, max_lines: int = 60) -> Optional[SensorReading]:
         latest = self._latest_reading
         lines_read = 0
 
