@@ -81,14 +81,14 @@ def capture_candidates(stream_url: str) -> list[tuple[str, str, int]]:
     parsed = urlparse(stream_url)
     is_http_stream = parsed.scheme in {"http", "https"}
 
-    if is_http_stream and hasattr(cv2, "CAP_FFMPEG"):
-        candidates.append((stream_url, "FFmpeg", cv2.CAP_FFMPEG))
-
     gstreamer_pipeline = build_gstreamer_mjpeg_pipeline(stream_url)
     if gstreamer_pipeline is not None and hasattr(cv2, "CAP_GSTREAMER"):
         candidates.append((gstreamer_pipeline, "GStreamer MJPEG pipeline", cv2.CAP_GSTREAMER))
 
-    candidates.append((stream_url, "default backend", cv2.CAP_ANY))
+    if is_http_stream:
+        candidates.append((stream_url, "default backend", cv2.CAP_ANY))
+    else:
+        candidates.append((stream_url, "direct source", cv2.CAP_ANY))
     return candidates
 
 
