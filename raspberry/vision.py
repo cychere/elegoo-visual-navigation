@@ -6,6 +6,7 @@ import socket
 import numpy as np
 from typing import Optional
 from dataclasses import dataclass
+from urllib.parse import urlparse
 from urllib.error import URLError
 
 
@@ -29,27 +30,79 @@ class VisualMeasurement:
 
 class VideoCaptureStream:
     def __init__(self, stream_url: str, timeout_s: float) -> None:
-        self._capture = cv2.VideoCapture()
+        self._capture: Optional[cv2.VideoCapture] = None
         timeout_ms = int(max(timeout_s, 0.0) * 1000.0)
+        open_errors: list[str] = []
 
-        if hasattr(cv2, "CAP_PROP_OPEN_TIMEOUT_MSEC"):
-            self._capture.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, timeout_ms)
-        if hasattr(cv2, "CAP_PROP_READ_TIMEOUT_MSEC"):
-            self._capture.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, timeout_ms)
-        if hasattr(cv2, "CAP_PROP_BUFFERSIZE"):
-            self._capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        for source, backend_name, api_preference in capture_candidates(stream_url):
+            capture = cv2.VideoCapture()
 
-        if not self._capture.open(stream_url):
-            raise RuntimeError("Camera stream failed to open.")
+            if hasattr(cv2, "CAP_PROP_OPEN_TIMEOUT_MSEC"):
+                capture.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, timeout_ms)
+            if hasattr(cv2, "CAP_PROP_READ_TIMEOUT_MSEC"):
+                capture.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, timeout_ms)
+            if hasattr(cv2, "CAP_PROP_BUFFERSIZE"):
+                capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+            try:
+                opened = capture.open(source, api_preference)
+            except cv2.error as exc:
+                open_errors.append(f"{backend_name}: {exc}")
+                capture.release()
+                continue
+
+            if opened:
+                self._capture = capture
+                return
+
+            open_errors.append(f"{backend_name}: open() returned false")
+            capture.release()
+
+        error_details = "; ".join(open_errors) if open_errors else "no backends attempted"
+        raise RuntimeError(f"Camera stream failed to open. {error_details}")
 
     def read(self) -> "np.ndarray":
+        if self._capture is None:
+            raise RuntimeError("Camera stream is not open.")
+
         success, frame = self._capture.read()
         if not success or frame is None:
             raise RuntimeError("Camera stream closed.")
         return frame
 
     def close(self) -> None:
-        self._capture.release()
+        if self._capture is not None:
+            self._capture.release()
+            self._capture = None
+
+
+def capture_candidates(stream_url: str) -> list[tuple[str, str, int]]:
+    candidates: list[tuple[str, str, int]] = []
+    parsed = urlparse(stream_url)
+    is_http_stream = parsed.scheme in {"http", "https"}
+
+    if is_http_stream and hasattr(cv2, "CAP_FFMPEG"):
+        candidates.append((stream_url, "FFmpeg", cv2.CAP_FFMPEG))
+
+    gstreamer_pipeline = build_gstreamer_mjpeg_pipeline(stream_url)
+    if gstreamer_pipeline is not None and hasattr(cv2, "CAP_GSTREAMER"):
+        candidates.append((gstreamer_pipeline, "GStreamer MJPEG pipeline", cv2.CAP_GSTREAMER))
+
+    candidates.append((stream_url, "default backend", cv2.CAP_ANY))
+    return candidates
+
+
+def build_gstreamer_mjpeg_pipeline(stream_url: str) -> Optional[str]:
+    parsed = urlparse(stream_url)
+    if parsed.scheme not in {"http", "https"}:
+        return None
+
+    # ESP32-CAM style `/stream` endpoints are multipart MJPEG and need explicit demuxing.
+    return (
+        f"souphttpsrc location={stream_url} is-live=true do-timestamp=true ! "
+        "multipartdemux ! jpegdec ! videoconvert ! "
+        "appsink drop=true max-buffers=1 sync=false"
+    )
 
 
 def wrap_degrees(angle_deg: float) -> float:
