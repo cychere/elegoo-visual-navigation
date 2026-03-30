@@ -6,8 +6,8 @@ import socket
 import numpy as np
 from typing import Optional
 from dataclasses import dataclass
-from urllib.parse import urlparse
 from urllib.error import URLError
+from urllib.request import Request, urlopen
 
 
 @dataclass(slots=True)
@@ -28,81 +28,43 @@ class VisualMeasurement:
     distance_m: Optional[float]
 
 
-class VideoCaptureStream:
+class MjpegStream:
     def __init__(self, stream_url: str, timeout_s: float) -> None:
-        self._capture: Optional[cv2.VideoCapture] = None
-        timeout_ms = int(max(timeout_s, 0.0) * 1000.0)
-        open_errors: list[str] = []
-
-        for source, backend_name, api_preference in capture_candidates(stream_url):
-            capture = cv2.VideoCapture()
-
-            if hasattr(cv2, "CAP_PROP_OPEN_TIMEOUT_MSEC"):
-                capture.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, timeout_ms)
-            if hasattr(cv2, "CAP_PROP_READ_TIMEOUT_MSEC"):
-                capture.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, timeout_ms)
-            if hasattr(cv2, "CAP_PROP_BUFFERSIZE"):
-                capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-
-            try:
-                opened = capture.open(source, api_preference)
-            except cv2.error as exc:
-                open_errors.append(f"{backend_name}: {exc}")
-                capture.release()
-                continue
-
-            if opened:
-                self._capture = capture
-                return
-
-            open_errors.append(f"{backend_name}: open() returned false")
-            capture.release()
-
-        error_details = "; ".join(open_errors) if open_errors else "no backends attempted"
-        raise RuntimeError(f"Camera stream failed to open. {error_details}")
+        request = Request(
+            stream_url,
+            headers={"User-Agent": "elegoo-visual-navigation"},
+        )
+        self._response = urlopen(request, timeout=timeout_s)
+        self._buffer = bytearray()
+        self._chunk_size = 8192
+        self._max_buffer_size = 2 * 1024 * 1024
 
     def read(self) -> "np.ndarray":
-        if self._capture is None:
-            raise RuntimeError("Camera stream is not open.")
+        while True:
+            start = self._buffer.find(b"\xff\xd8")
+            end = self._buffer.find(b"\xff\xd9", start + 2 if start != -1 else 0)
 
-        success, frame = self._capture.read()
-        if not success or frame is None:
-            raise RuntimeError("Camera stream closed.")
-        return frame
+            if start != -1 and end != -1 and end > start:
+                jpeg = bytes(self._buffer[start : end + 2])
+                del self._buffer[: end + 2]
+                frame = cv2.imdecode(np.frombuffer(jpeg, dtype=np.uint8), cv2.IMREAD_COLOR)
+                if frame is not None:
+                    return frame
+
+            chunk = self._response.read(self._chunk_size)
+            if not chunk:
+                raise RuntimeError("Camera stream closed.")
+
+            self._buffer.extend(chunk)
+            if len(self._buffer) > self._max_buffer_size:
+                last_start = self._buffer.rfind(b"\xff\xd8")
+                if last_start == -1:
+                    self._buffer.clear()
+                else:
+                    del self._buffer[:last_start]
 
     def close(self) -> None:
-        if self._capture is not None:
-            self._capture.release()
-            self._capture = None
-
-
-def capture_candidates(stream_url: str) -> list[tuple[str, str, int]]:
-    candidates: list[tuple[str, str, int]] = []
-    parsed = urlparse(stream_url)
-    is_http_stream = parsed.scheme in {"http", "https"}
-
-    gstreamer_pipeline = build_gstreamer_mjpeg_pipeline(stream_url)
-    if gstreamer_pipeline is not None and hasattr(cv2, "CAP_GSTREAMER"):
-        candidates.append((gstreamer_pipeline, "GStreamer MJPEG pipeline", cv2.CAP_GSTREAMER))
-
-    if is_http_stream:
-        candidates.append((stream_url, "default backend", cv2.CAP_ANY))
-    else:
-        candidates.append((stream_url, "direct source", cv2.CAP_ANY))
-    return candidates
-
-
-def build_gstreamer_mjpeg_pipeline(stream_url: str) -> Optional[str]:
-    parsed = urlparse(stream_url)
-    if parsed.scheme not in {"http", "https"}:
-        return None
-
-    # ESP32-CAM style `/stream` endpoints are multipart MJPEG and need explicit demuxing.
-    return (
-        f"souphttpsrc location={stream_url} is-live=true do-timestamp=true ! "
-        "multipartdemux ! jpegdec ! videoconvert ! "
-        "appsink drop=true max-buffers=1 sync=false"
-    )
+        self._response.close()
 
 
 def wrap_degrees(angle_deg: float) -> float:
@@ -356,8 +318,8 @@ def draw_overlay(
     return canvas
 
 
-def open_stream(stream_url: str, timeout_s: float) -> VideoCaptureStream:
+def open_stream(stream_url: str, timeout_s: float) -> MjpegStream:
     try:
-        return VideoCaptureStream(stream_url, timeout_s)
-    except (RuntimeError, URLError, TimeoutError, socket.timeout, OSError) as exc:
+        return MjpegStream(stream_url, timeout_s)
+    except (URLError, TimeoutError, socket.timeout, OSError) as exc:
         raise RuntimeError(f"Unable to open camera stream: {stream_url} ({exc})") from exc

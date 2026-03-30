@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from arduino_io import ArduinoLink, SensorReading
 from motor_mixer import RobotCommand, WheelCommand, mix_drive_command
 from vision import (
-    VideoCaptureStream,
+    MjpegStream,
     VisualMeasurement,
     build_aruco_detector,
     detect_aruco_markers,
@@ -173,7 +173,7 @@ def compute_decision(
 def main() -> int:
     settings = Settings()
     detector = build_aruco_detector(settings.aruco_dictionary_name)
-    stream: Optional[VideoCaptureStream] = None
+    stream: Optional[MjpegStream] = None
     smoothed_angle_deg: Optional[float] = None
     remembered_target_heading_deg: Optional[float] = None
     remembered_at_s = 0.0
