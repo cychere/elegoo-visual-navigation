@@ -60,6 +60,25 @@ class ArduinoLink:
         self._latest_reading = latest
         return latest
 
+    def wait_for_reading(self, timeout_s: float = 2.0) -> SensorReading:
+        deadline = time.monotonic() + timeout_s
+
+        while time.monotonic() < deadline:
+            reading = self.read_latest()
+            if reading is not None:
+                return reading
+
+            raw = self._serial.readline()
+            if not raw:
+                continue
+
+            parsed = self._parse_line(raw.decode("ascii", errors="ignore").strip())
+            if parsed is not None:
+                self._latest_reading = parsed
+                return parsed
+
+        raise TimeoutError("Timed out waiting for SENSOR data from the Arduino.")
+
     def send_motor(self, left_pwm: int, right_pwm: int) -> None:
         left_pwm = clamp(left_pwm, -255, 255)
         right_pwm = clamp(right_pwm, -255, 255)

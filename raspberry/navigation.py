@@ -8,7 +8,7 @@ import socket
 import numpy as np
 from typing import Optional
 from urllib.error import URLError
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from urllib.request import Request, urlopen
 from arduino_io import ArduinoLink, SensorReading
 from motor_mixer import RobotCommand, MixerSettings, WheelCommand, mix_drive_command
@@ -34,7 +34,7 @@ class VisualMeasurement:
 
 @dataclass(slots=True)
 class ControlDecision:
-    drive: RobotCommand
+    robot: RobotCommand
     wheels: WheelCommand
     sensor: Optional[SensorReading]
     target_visible: bool
@@ -46,20 +46,23 @@ class Settings:
     serial_port: str = "/dev/ttyUSB0"
     baud_rate: int = 115200
     stream_url: str = "http://192.168.50.48/stream"
+    reconnect_delay_s: float = 1.0
+    stream_timeout_s: float = 5.0
+
     target_marker_id: Optional[int] = None
     target_payload: Optional[str] = None
     aruco_dictionary_name: str = "DICT_4X4_50"
-    horizontal_fov_deg: float = 62.2
     marker_size_m: Optional[float] = None
-    qr_size_m: Optional[float] = None
+
+    horizontal_fov_deg: float = 62.2
     camera_forward_offset_m: float = 0.0
     camera_left_offset_m: float = 0.0
+
     min_area_px: float = 500.0
     smoothing: float = 0.2
     report_hz: float = 5.0
-    reconnect_delay_s: float = 1.0
-    stream_timeout_s: float = 5.0
     show_preview: bool = True
+
     target_distance_m: float = 0.45
     distance_gain: float = 1.4
     cruise_speed: float = 0.45
@@ -69,18 +72,17 @@ class Settings:
     turn_in_place_angle_deg: float = 35.0
     max_heading_for_speed_deg: float = 70.0
     target_memory_s: float = 1.5
-    mixer: MixerSettings = field(default_factory=MixerSettings)
 
 
 class MjpegStream:
     def __init__(self, stream_url: str, timeout_s: float) -> None:
         request = Request(
             stream_url,
-            headers={"User-Agent": "elegoo-visual-navigation/1.0"},
+            headers={"User-Agent": "elegoo-visual-navigation"},
         )
         self._response = urlopen(request, timeout=timeout_s)
         self._buffer = bytearray()
-        self._chunk_size = 4096
+        self._chunk_size = 8192
         self._max_buffer_size = 2 * 1024 * 1024
 
     def read(self) -> "np.ndarray":
@@ -197,12 +199,6 @@ def configured_target_marker_id(settings: Settings) -> Optional[int]:
         return int(settings.target_payload)
     except ValueError:
         return None
-
-
-def configured_marker_size_m(settings: Settings) -> Optional[float]:
-    if settings.marker_size_m is not None:
-        return settings.marker_size_m
-    return settings.qr_size_m
 
 
 def detect_aruco_markers(
@@ -393,8 +389,8 @@ def draw_overlay(
     lines = [
         f"Stream: {settings.stream_url}",
         f"Target visible: {'yes' if decision.target_visible else 'no'}",
-        f"Robot angle: {decision.drive.angle_deg:+6.1f} deg",
-        f"Robot speed: {decision.drive.speed:.2f}",
+        f"Robot angle: {decision.robot.angle_deg:+6.1f} deg",
+        f"Robot speed: {decision.robot.speed:.2f}",
         f"Wheels: L {decision.wheels.left_pwm:+4d} | R {decision.wheels.right_pwm:+4d}",
     ]
 
@@ -441,8 +437,8 @@ def draw_overlay(
 def emit_report(decision: ControlDecision, measurement: Optional[VisualMeasurement]) -> None:
     parts = [
         f"visible={'yes' if decision.target_visible else 'no'}",
-        f"robot_angle_deg={decision.drive.angle_deg:+.2f}",
-        f"robot_speed={decision.drive.speed:.3f}",
+        f"robot_angle_deg={decision.robot.angle_deg:+.2f}",
+        f"robot_speed={decision.robot.speed:.3f}",
         f"left_pwm={decision.wheels.left_pwm:+d}",
         f"right_pwm={decision.wheels.right_pwm:+d}",
     ]
@@ -492,9 +488,9 @@ def compute_decision(
             speed=0.0,
         )
 
-    wheels = mix_drive_command(drive, settings.mixer)
+    wheels = mix_drive_command(drive)
     return ControlDecision(
-        drive=drive,
+        robot=drive,
         wheels=wheels,
         sensor=sensor,
         target_visible=target_visible,
@@ -522,7 +518,7 @@ def main() -> int:
     remembered_at_s = 0.0
     next_report_time = 0.0
     target_marker_id = configured_target_marker_id(settings)
-    marker_size_m = configured_marker_size_m(settings)
+    marker_size_m = settings.marker_size_m
 
     with ArduinoLink(port=settings.serial_port, baud_rate=settings.baud_rate) as arduino:
         latest_sensor = arduino.wait_for_reading()
