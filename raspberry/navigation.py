@@ -51,7 +51,6 @@ class Settings:
 
     min_area_px: float = 500.0
     smoothing: float = 0.2
-    report_hz: float = 5.0
     show_preview: bool = True
 
     target_distance_m: float = 0.45
@@ -135,27 +134,6 @@ def speed_from_target(
     return clamp(requested_speed * obstacle_scale * heading_scale, 0.0, settings.max_speed)
 
 
-def emit_report(decision: ControlDecision, measurement: Optional[VisualMeasurement]) -> None:
-    parts = [
-        f"visible={'yes' if decision.target_visible else 'no'}",
-        f"robot_angle_deg={decision.robot.angle_deg:+.2f}",
-        f"robot_speed={decision.robot.speed:.3f}",
-        f"left_pwm={decision.wheels.left_pwm:+d}",
-        f"right_pwm={decision.wheels.right_pwm:+d}",
-    ]
-
-    if decision.sensor is not None:
-        parts.append(f"yaw_deg={decision.sensor.yaw_deg:+.2f}")
-        parts.append(f"distance_cm={decision.sensor.distance_cm}")
-
-    if measurement is not None and measurement.distance_m is not None:
-        parts.append(f"marker_distance_m={measurement.distance_m:.3f}")
-    if measurement is not None:
-        parts.append(f"marker_id={measurement.marker_id}")
-
-    print(" ".join(parts), flush=True)
-
-
 def compute_decision(
     measurement: Optional[VisualMeasurement],
     sensor: Optional[SensorReading],
@@ -199,7 +177,6 @@ def main() -> int:
     smoothed_angle_deg: Optional[float] = None
     remembered_target_heading_deg: Optional[float] = None
     remembered_at_s = 0.0
-    next_report_time = 0.0
     target_marker_id = configured_target_marker_id(settings)
     marker_size_m = settings.marker_size_m
 
@@ -280,11 +257,6 @@ def main() -> int:
                     settings=settings,
                 )
                 arduino.send_motor(decision.wheels.left_pwm, decision.wheels.right_pwm)
-
-                current_time = time.time()
-                if current_time >= next_report_time:
-                    emit_report(decision, measurement)
-                    next_report_time = current_time + (1.0 / settings.report_hz)
 
                 if not settings.show_preview:
                     continue
