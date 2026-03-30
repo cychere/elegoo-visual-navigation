@@ -7,7 +7,6 @@ import numpy as np
 from typing import Optional
 from dataclasses import dataclass
 from urllib.error import URLError
-from urllib.request import Request, urlopen
 
 
 @dataclass(slots=True)
@@ -28,43 +27,29 @@ class VisualMeasurement:
     distance_m: Optional[float]
 
 
-class MjpegStream:
+class VideoCaptureStream:
     def __init__(self, stream_url: str, timeout_s: float) -> None:
-        request = Request(
-            stream_url,
-            headers={"User-Agent": "elegoo-visual-navigation"},
-        )
-        self._response = urlopen(request, timeout=timeout_s)
-        self._buffer = bytearray()
-        self._chunk_size = 8192
-        self._max_buffer_size = 2 * 1024 * 1024
+        self._capture = cv2.VideoCapture()
+        timeout_ms = int(max(timeout_s, 0.0) * 1000.0)
+
+        if hasattr(cv2, "CAP_PROP_OPEN_TIMEOUT_MSEC"):
+            self._capture.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, timeout_ms)
+        if hasattr(cv2, "CAP_PROP_READ_TIMEOUT_MSEC"):
+            self._capture.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, timeout_ms)
+        if hasattr(cv2, "CAP_PROP_BUFFERSIZE"):
+            self._capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+        if not self._capture.open(stream_url):
+            raise RuntimeError("Camera stream failed to open.")
 
     def read(self) -> "np.ndarray":
-        while True:
-            start = self._buffer.find(b"\xff\xd8")
-            end = self._buffer.find(b"\xff\xd9", start + 2 if start != -1 else 0)
-
-            if start != -1 and end != -1 and end > start:
-                jpeg = bytes(self._buffer[start : end + 2])
-                del self._buffer[: end + 2]
-                frame = cv2.imdecode(np.frombuffer(jpeg, dtype=np.uint8), cv2.IMREAD_COLOR)
-                if frame is not None:
-                    return frame
-
-            chunk = self._response.read(self._chunk_size)
-            if not chunk:
-                raise RuntimeError("Camera stream closed.")
-
-            self._buffer.extend(chunk)
-            if len(self._buffer) > self._max_buffer_size:
-                last_start = self._buffer.rfind(b"\xff\xd8")
-                if last_start == -1:
-                    self._buffer.clear()
-                else:
-                    del self._buffer[:last_start]
+        success, frame = self._capture.read()
+        if not success or frame is None:
+            raise RuntimeError("Camera stream closed.")
+        return frame
 
     def close(self) -> None:
-        self._response.close()
+        self._capture.release()
 
 
 def wrap_degrees(angle_deg: float) -> float:
@@ -318,8 +303,8 @@ def draw_overlay(
     return canvas
 
 
-def open_stream(stream_url: str, timeout_s: float) -> MjpegStream:
+def open_stream(stream_url: str, timeout_s: float) -> VideoCaptureStream:
     try:
-        return MjpegStream(stream_url, timeout_s)
-    except (URLError, TimeoutError, socket.timeout, OSError) as exc:
+        return VideoCaptureStream(stream_url, timeout_s)
+    except (RuntimeError, URLError, TimeoutError, socket.timeout, OSError) as exc:
         raise RuntimeError(f"Unable to open camera stream: {stream_url} ({exc})") from exc
