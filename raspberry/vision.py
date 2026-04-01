@@ -6,6 +6,7 @@ import socket
 import numpy as np
 from typing import Optional
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
@@ -33,6 +34,56 @@ class ArucoDetectorBundle:
     dictionary: object
     parameters: object
     detector: Optional[object]
+
+
+@dataclass(slots=True)
+class CameraCalibration:
+    camera_matrix: "np.ndarray"
+    distortion_coeffs: "np.ndarray"
+    image_width: int
+    image_height: int
+    reprojection_error: Optional[float] = None
+
+    def camera_matrix_for_frame(self, frame_width: int, frame_height: int) -> "np.ndarray":
+        if frame_width == self.image_width and frame_height == self.image_height:
+            return self.camera_matrix.copy()
+
+        scaled = self.camera_matrix.astype(np.float32).copy()
+        scale_x = frame_width / float(self.image_width)
+        scale_y = frame_height / float(self.image_height)
+        scaled[0, 0] *= scale_x
+        scaled[0, 2] *= scale_x
+        scaled[1, 1] *= scale_y
+        scaled[1, 2] *= scale_y
+        return scaled
+
+
+def default_camera_calibration_path() -> Path:
+    return Path(__file__).with_name("camera_calibration.npz")
+
+
+def load_camera_calibration(calibration_path: str | Path) -> CameraCalibration:
+    path = Path(calibration_path).expanduser()
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Camera calibration file not found: {path}. "
+            "Generate it with raspberry/camera_calibrate.py."
+        )
+
+    with np.load(path, allow_pickle=False) as data:
+        reprojection_error = None
+        if "reprojection_error" in data.files:
+            reprojection_error = float(np.asarray(data["reprojection_error"]).item())
+
+        return CameraCalibration(
+            camera_matrix=np.asarray(data["camera_matrix"], dtype=np.float32).reshape(3, 3),
+            distortion_coeffs=np.asarray(data["distortion_coeffs"], dtype=np.float32).reshape(
+                -1, 1
+            ),
+            image_width=int(np.asarray(data["image_width"]).item()),
+            image_height=int(np.asarray(data["image_height"]).item()),
+            reprojection_error=reprojection_error,
+        )
 
 
 class MjpegStream:
@@ -76,21 +127,21 @@ def wrap_degrees(angle_deg: float) -> float:
     return (angle_deg + 180.0) % 360.0 - 180.0
 
 
-def focal_length_px(frame_width: int, horizontal_fov_deg: float) -> float:
-    half_fov_rad = math.radians(horizontal_fov_deg / 2.0)
-    return (frame_width / 2.0) / math.tan(half_fov_rad)
-
-
-def build_camera_matrix(
-    frame_width: int, frame_height: int, horizontal_fov_deg: float
-) -> "np.ndarray":
-    focal_px = focal_length_px(frame_width, horizontal_fov_deg)
-    cx = (frame_width - 1) / 2.0
-    cy = (frame_height - 1) / 2.0
-    return np.array(
-        [[focal_px, 0.0, cx], [0.0, focal_px, cy], [0.0, 0.0, 1.0]],
-        dtype=np.float32,
+def horizontal_bearing_deg(
+    center_x: float,
+    center_y: float,
+    frame_width: int,
+    frame_height: int,
+    camera_calibration: CameraCalibration,
+) -> float:
+    camera_matrix = camera_calibration.camera_matrix_for_frame(frame_width, frame_height)
+    undistorted = cv2.undistortPoints(
+        np.array([[[center_x, center_y]]], dtype=np.float32),
+        camera_matrix,
+        camera_calibration.distortion_coeffs,
     )
+    normalized_x = float(undistorted[0, 0, 0])
+    return math.degrees(math.atan2(-normalized_x, 1.0))
 
 
 def build_aruco_detector(dictionary_name: str) -> ArucoDetectorBundle:
@@ -173,6 +224,7 @@ def estimate_marker_pose(
     detection: Detection,
     marker_size_m: float,
     camera_matrix: "np.ndarray",
+    distortion_coeffs: "np.ndarray",
 ) -> tuple[Optional[float], Optional[float], Optional[float]]:
     half_size = marker_size_m / 2.0
     object_points = np.array(
@@ -184,13 +236,12 @@ def estimate_marker_pose(
         ],
         dtype=np.float32,
     )
-    distortion = np.zeros((4, 1), dtype=np.float32)
 
     success, _rvec, tvec = cv2.solvePnP(
         object_points,
         detection.corners.astype(np.float32),
         camera_matrix,
-        distortion,
+        distortion_coeffs,
         flags=cv2.SOLVEPNP_ITERATIVE,
     )
     if not success:
@@ -211,20 +262,27 @@ def measure_target(
     detection: Detection,
     frame_width: int,
     frame_height: int,
-    horizontal_fov_deg: float,
+    camera_calibration: CameraCalibration,
     marker_size_m: Optional[float],
     camera_forward_offset_m: float,
     camera_left_offset_m: float,
 ) -> VisualMeasurement:
-    frame_center_x = (frame_width - 1) / 2.0
-    focal_px = focal_length_px(frame_width, horizontal_fov_deg)
-    angle_deg = math.degrees(math.atan2(frame_center_x - detection.center_x, focal_px))
+    angle_deg = horizontal_bearing_deg(
+        detection.center_x,
+        detection.center_y,
+        frame_width,
+        frame_height,
+        camera_calibration,
+    )
     distance_m = None
 
     if marker_size_m is not None and marker_size_m > 0.0:
-        camera_matrix = build_camera_matrix(frame_width, frame_height, horizontal_fov_deg)
+        camera_matrix = camera_calibration.camera_matrix_for_frame(frame_width, frame_height)
         pose_forward_m, pose_left_m, pose_distance_m = estimate_marker_pose(
-            detection, marker_size_m, camera_matrix
+            detection,
+            marker_size_m,
+            camera_matrix,
+            camera_calibration.distortion_coeffs,
         )
         if (
             pose_forward_m is not None

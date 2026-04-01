@@ -14,8 +14,10 @@ from vision import (
     MjpegStream,
     VisualMeasurement,
     build_aruco_detector,
+    default_camera_calibration_path,
     detect_aruco_markers,
     draw_overlay,
+    load_camera_calibration,
     measure_target,
     open_stream,
     select_detection,
@@ -45,7 +47,7 @@ class Settings:
     aruco_dictionary_name: str = "DICT_4X4_50"
     marker_size_m: Optional[float] = None
 
-    horizontal_fov_deg: float = 62.2
+    camera_calibration_path: str = str(default_camera_calibration_path())
     camera_forward_offset_m: float = 0.0
     camera_left_offset_m: float = 0.0
 
@@ -172,6 +174,12 @@ def compute_decision(
 
 def main() -> int:
     settings = Settings()
+    try:
+        camera_calibration = load_camera_calibration(settings.camera_calibration_path)
+    except (FileNotFoundError, ValueError, OSError) as exc:
+        print(f"Camera calibration error: {exc}", file=sys.stderr)
+        return 1
+
     detector = build_aruco_detector(settings.aruco_dictionary_name)
     stream: Optional[MjpegStream] = None
     smoothed_angle_deg: Optional[float] = None
@@ -227,7 +235,7 @@ def main() -> int:
                         detection=target,
                         frame_width=frame_width,
                         frame_height=frame_height,
-                        horizontal_fov_deg=settings.horizontal_fov_deg,
+                        camera_calibration=camera_calibration,
                         marker_size_m=marker_size_m,
                         camera_forward_offset_m=settings.camera_forward_offset_m,
                         camera_left_offset_m=settings.camera_left_offset_m,
