@@ -28,6 +28,13 @@ class VisualMeasurement:
     distance_m: Optional[float]
 
 
+@dataclass(slots=True)
+class ArucoDetectorBundle:
+    dictionary: object
+    parameters: object
+    detector: Optional[object]
+
+
 class MjpegStream:
     def __init__(self, stream_url: str, timeout_s: float) -> None:
         request = Request(
@@ -52,8 +59,6 @@ class MjpegStream:
                     return frame
 
             chunk = self._response.read(self._chunk_size)
-            if not chunk:
-                raise RuntimeError("Camera stream closed.")
 
             self._buffer.extend(chunk)
             if len(self._buffer) > self._max_buffer_size:
@@ -86,13 +91,6 @@ def build_camera_matrix(
         [[focal_px, 0.0, cx], [0.0, focal_px, cy], [0.0, 0.0, 1.0]],
         dtype=np.float32,
     )
-
-
-@dataclass(slots=True)
-class ArucoDetectorBundle:
-    dictionary: object
-    parameters: object
-    detector: Optional[object]
 
 
 def build_aruco_detector(dictionary_name: str) -> ArucoDetectorBundle:
