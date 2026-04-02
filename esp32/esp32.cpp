@@ -36,7 +36,7 @@ void CameraWebServer::Init(void)
 
     sensor_t *s = esp_camera_sensor_get();
 
-    s->set_exposure_ctrl(s, 1);
+    s->set_exposure_ctrl(s, 0);
     s->set_aec2(s, 0);
     s->set_aec_value(s, 500);
 

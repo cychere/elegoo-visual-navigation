@@ -4,7 +4,7 @@ from __future__ import annotations
 Calibrate the Raspberry camera from photos of a 9x6 chessboard.
 
 Usage example:
-    python3 raspberry/camera_calibrate.py "calibration/*.jpg" --square-size-mm 24
+    python3 raspberry/camera_calibrate.py "calibration/*.jpeg" --square-size-mm 23
 
 How to capture the photos:
     - Use a rigid, flat printed checkerboard with 9x6 inner corners.
