@@ -45,7 +45,7 @@ class Settings:
     target_marker_id: Optional[int] = None
     target_payload: Optional[str] = None
     aruco_dictionary_name: str = "DICT_4X4_50"
-    marker_size_m: Optional[float] = None
+    marker_size_m: Optional[float] = 0.05
 
     camera_calibration_path: str = str(default_camera_calibration_path())
     camera_forward_offset_m: float = 0.0
