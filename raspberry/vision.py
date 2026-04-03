@@ -58,10 +58,6 @@ class CameraCalibration:
         return scaled
 
 
-def default_camera_calibration_path() -> Path:
-    return Path(__file__).with_name("camera_calibration.npz")
-
-
 def load_camera_calibration(calibration_path: str | Path) -> CameraCalibration:
     path = Path(calibration_path).expanduser()
     if not path.exists():

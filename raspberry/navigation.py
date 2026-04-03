@@ -14,7 +14,6 @@ from vision import (
     MjpegStream,
     VisualMeasurement,
     build_aruco_detector,
-    default_camera_calibration_path,
     detect_aruco_markers,
     draw_overlay,
     load_camera_calibration,
@@ -47,7 +46,7 @@ class Settings:
     aruco_dictionary_name: str = "DICT_4X4_50"
     marker_size_m: Optional[float] = 0.05
 
-    camera_calibration_path: str = str(default_camera_calibration_path())
+    camera_calibration_path: str = "camera_calibration.npz"
     camera_forward_offset_m: float = 0.0
     camera_left_offset_m: float = 0.0
 
