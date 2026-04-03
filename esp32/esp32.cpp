@@ -38,7 +38,7 @@ void CameraWebServer::Init(void)
 
     s->set_exposure_ctrl(s, 0);
     s->set_aec2(s, 0);
-    s->set_aec_value(s, 500);
+    s->set_aec_value(s, 60);
 
     s->set_gain_ctrl(s, 1);
     s->set_gainceiling(s, (gainceiling_t)GAINCEILING_2X);
