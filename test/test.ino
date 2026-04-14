@@ -27,7 +27,6 @@ namespace
     char commandBuffer[Command_Buffer_Max_Length + 1] = {};
     unsigned long motorStopAtMs = 0;
     bool motorRunning = false;
-    bool resetCausePrinted = false;
     float gyroBias = 0.0f;
     float yawDeg = 0.0f;
     float yawAngularSpeedDegPerSec = 0.0f;
@@ -101,60 +100,6 @@ namespace
         analogWrite(Motor_PWMA, 0);
         analogWrite(Motor_PWMB, 0);
         digitalWrite(Motor_STBY, LOW);
-    }
-
-    void printResetCause()
-    {
-        if (resetCausePrinted)
-        {
-            return;
-        }
-
-        resetCausePrinted = true;
-        Serial.print(F("RESET "));
-
-#if defined(MCUSR)
-        uint8_t cause = MCUSR;
-        MCUSR = 0;
-
-        if (cause == 0)
-        {
-            Serial.println(F("unknown"));
-            return;
-        }
-
-#if defined(PORF)
-        if (cause & _BV(PORF))
-        {
-            Serial.print(F("power-on "));
-        }
-#endif
-
-#if defined(EXTRF)
-        if (cause & _BV(EXTRF))
-        {
-            Serial.print(F("external "));
-        }
-#endif
-
-#if defined(BORF)
-        if (cause & _BV(BORF))
-        {
-            Serial.print(F("brown-out "));
-        }
-#endif
-
-#if defined(WDRF)
-        if (cause & _BV(WDRF))
-        {
-            Serial.print(F("watchdog "));
-        }
-#endif
-
-        Serial.println();
-#else
-        Serial.println(F("unavailable"));
-#endif
     }
 
     void initUltrasonic()
@@ -379,7 +324,6 @@ void setup()
     Serial.begin(Serial_Baud_Rate);
     Serial.setTimeout(10);
 
-    printResetCause();
     initMotor();
     initUltrasonic();
     initMpu();
