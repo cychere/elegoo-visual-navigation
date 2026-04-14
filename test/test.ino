@@ -8,6 +8,8 @@ namespace
     constexpr unsigned long Serial_Baud_Rate = 115200;
     constexpr unsigned long Loop_Frequency_Hz = 60;
     constexpr unsigned long Loop_Period_Us = 1000000UL / Loop_Frequency_Hz;
+    constexpr unsigned long Speed_Window_Us = 1000000UL;
+    constexpr size_t Speed_Window_Sample_Capacity = static_cast<size_t>(Loop_Frequency_Hz) + 5;
     constexpr int Gyro_Calibration_Samples = 200;
     constexpr int Yaw_Print_Precision = 6;
     constexpr size_t Command_Buffer_Max_Length = 48;
@@ -31,9 +33,14 @@ namespace
     float yawDeg = 0.0f;
     float yawAngularSpeedDegPerSec = 0.0f;
     float forwardSpeedCmPerSec = 0.0f;
-    uint16_t lastDistanceCm = 0;
-    unsigned long lastDistanceUpdateUs = 0;
-    bool hasDistanceSample = false;
+    unsigned long yawSampleTimesUs[Speed_Window_Sample_Capacity] = {};
+    float yawSampleDeg[Speed_Window_Sample_Capacity] = {};
+    size_t yawSampleStart = 0;
+    size_t yawSampleCount = 0;
+    unsigned long distanceSampleTimesUs[Speed_Window_Sample_Capacity] = {};
+    uint16_t distanceSampleCm[Speed_Window_Sample_Capacity] = {};
+    size_t distanceSampleStart = 0;
+    size_t distanceSampleCount = 0;
     unsigned long lastYawUpdateUs = 0;
     unsigned long nextLoopUs = 0;
 
@@ -148,12 +155,77 @@ namespace
 
         gyroBias = calibrateGyro();
         yawDeg = 0.0f;
+        yawAngularSpeedDegPerSec = 0.0f;
+        yawSampleStart = 0;
+        yawSampleCount = 0;
         lastYawUpdateUs = micros();
 
         Serial.print(F("Gyro Z bias: "));
         Serial.println(gyroBias, 6);
 
         return true;
+    }
+
+    size_t nextSampleIndex(size_t start, size_t count)
+    {
+        return (start + count) % Speed_Window_Sample_Capacity;
+    }
+
+    void appendYawSample(unsigned long now, float yaw)
+    {
+        size_t sampleIndex = 0;
+
+        if (yawSampleCount < Speed_Window_Sample_Capacity)
+        {
+            sampleIndex = nextSampleIndex(yawSampleStart, yawSampleCount);
+            ++yawSampleCount;
+        }
+        else
+        {
+            sampleIndex = yawSampleStart;
+            yawSampleStart = nextSampleIndex(yawSampleStart, 1);
+        }
+
+        yawSampleTimesUs[sampleIndex] = now;
+        yawSampleDeg[sampleIndex] = yaw;
+
+        while (yawSampleCount > 1 && now - yawSampleTimesUs[yawSampleStart] > Speed_Window_Us)
+        {
+            yawSampleStart = nextSampleIndex(yawSampleStart, 1);
+            --yawSampleCount;
+        }
+    }
+
+    void appendDistanceSample(unsigned long now, uint16_t distanceCm)
+    {
+        size_t sampleIndex = 0;
+
+        if (distanceSampleCount < Speed_Window_Sample_Capacity)
+        {
+            sampleIndex = nextSampleIndex(distanceSampleStart, distanceSampleCount);
+            ++distanceSampleCount;
+        }
+        else
+        {
+            sampleIndex = distanceSampleStart;
+            distanceSampleStart = nextSampleIndex(distanceSampleStart, 1);
+        }
+
+        distanceSampleTimesUs[sampleIndex] = now;
+        distanceSampleCm[sampleIndex] = distanceCm;
+
+        while (distanceSampleCount > 1 && now - distanceSampleTimesUs[distanceSampleStart] > Speed_Window_Us)
+        {
+            distanceSampleStart = nextSampleIndex(distanceSampleStart, 1);
+            --distanceSampleCount;
+        }
+    }
+
+    void clearDistanceSamples()
+    {
+        distanceSampleStart = 0;
+        distanceSampleCount = 0;
+        forwardSpeedCmPerSec = 0.0f;
     }
 
     void refreshYaw()
@@ -167,8 +239,25 @@ namespace
 
         float deltaSeconds = deltaUs / 1000000.0f;
         float correctedGyroZ = gyro.gyro.z - gyroBias;
-        yawAngularSpeedDegPerSec = correctedGyroZ * RAD_TO_DEG_F;
-        yawDeg += yawAngularSpeedDegPerSec * deltaSeconds;
+        yawDeg += correctedGyroZ * RAD_TO_DEG_F * deltaSeconds;
+
+        appendYawSample(now, yawDeg);
+
+        if (yawSampleCount < 2)
+        {
+            yawAngularSpeedDegPerSec = 0.0f;
+            return;
+        }
+
+        unsigned long sampleDeltaUs = now - yawSampleTimesUs[yawSampleStart];
+        if (sampleDeltaUs == 0)
+        {
+            yawAngularSpeedDegPerSec = 0.0f;
+            return;
+        }
+
+        float sampleDeltaSeconds = sampleDeltaUs / 1000000.0f;
+        yawAngularSpeedDegPerSec = (yawDeg - yawSampleDeg[yawSampleStart]) / sampleDeltaSeconds;
     }
 
     void delayUntilNextLoop()
@@ -209,30 +298,27 @@ namespace
 
         if (distanceCm == 0)
         {
-            hasDistanceSample = false;
-            forwardSpeedCmPerSec = 0.0f;
+            clearDistanceSamples();
             return;
         }
 
-        if (!hasDistanceSample)
+        appendDistanceSample(now, distanceCm);
+
+        if (distanceSampleCount < 2)
         {
-            lastDistanceCm = distanceCm;
-            lastDistanceUpdateUs = now;
-            hasDistanceSample = true;
             forwardSpeedCmPerSec = 0.0f;
             return;
         }
 
-        unsigned long deltaUs = now - lastDistanceUpdateUs;
+        unsigned long deltaUs = now - distanceSampleTimesUs[distanceSampleStart];
         if (deltaUs == 0)
         {
+            forwardSpeedCmPerSec = 0.0f;
             return;
         }
 
         float deltaSeconds = deltaUs / 1000000.0f;
-        forwardSpeedCmPerSec = (static_cast<float>(lastDistanceCm) - distanceCm) / deltaSeconds;
-        lastDistanceCm = distanceCm;
-        lastDistanceUpdateUs = now;
+        forwardSpeedCmPerSec = (static_cast<float>(distanceSampleCm[distanceSampleStart]) - distanceCm) / deltaSeconds;
     }
 
     void runTimedMotor(int left, int right, unsigned long durationSeconds)
