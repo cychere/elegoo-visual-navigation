@@ -2,12 +2,9 @@ from __future__ import annotations
 
 import cv2
 import math
-import socket
 import numpy as np
-from typing import Optional
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 
@@ -26,14 +23,7 @@ class VisualMeasurement:
     marker_id: int
     center_x: float
     center_y: float
-    distance_m: Optional[float]
-
-
-@dataclass(slots=True)
-class ArucoDetectorBundle:
-    dictionary: object
-    parameters: object
-    detector: Optional[object]
+    distance_m: float | None
 
 
 @dataclass(slots=True)
@@ -42,12 +32,9 @@ class CameraCalibration:
     distortion_coeffs: "np.ndarray"
     image_width: int
     image_height: int
-    reprojection_error: Optional[float] = None
+    reprojection_error: float
 
     def camera_matrix_for_frame(self, frame_width: int, frame_height: int) -> "np.ndarray":
-        if frame_width == self.image_width and frame_height == self.image_height:
-            return self.camera_matrix.copy()
-
         scaled = self.camera_matrix.astype(np.float32).copy()
         scale_x = frame_width / float(self.image_width)
         scale_y = frame_height / float(self.image_height)
@@ -59,18 +46,7 @@ class CameraCalibration:
 
 
 def load_camera_calibration(calibration_path: str | Path) -> CameraCalibration:
-    path = Path(calibration_path).expanduser()
-    if not path.exists():
-        raise FileNotFoundError(
-            f"Camera calibration file not found: {path}. "
-            "Generate it with raspberry/camera_calibrate.py."
-        )
-
-    with np.load(path, allow_pickle=False) as data:
-        reprojection_error = None
-        if "reprojection_error" in data.files:
-            reprojection_error = float(np.asarray(data["reprojection_error"]).item())
-
+    with np.load(Path(calibration_path).expanduser(), allow_pickle=False) as data:
         return CameraCalibration(
             camera_matrix=np.asarray(data["camera_matrix"], dtype=np.float32).reshape(3, 3),
             distortion_coeffs=np.asarray(data["distortion_coeffs"], dtype=np.float32).reshape(
@@ -78,7 +54,7 @@ def load_camera_calibration(calibration_path: str | Path) -> CameraCalibration:
             ),
             image_width=int(np.asarray(data["image_width"]).item()),
             image_height=int(np.asarray(data["image_height"]).item()),
-            reprojection_error=reprojection_error,
+            reprojection_error=float(np.asarray(data["reprojection_error"]).item()),
         )
 
 
@@ -91,7 +67,6 @@ class MjpegStream:
         self._response = urlopen(request, timeout=timeout_s)
         self._buffer = bytearray()
         self._chunk_size = 8192
-        self._max_buffer_size = 2 * 1024 * 1024
 
     def read(self) -> "np.ndarray":
         while True:
@@ -105,15 +80,7 @@ class MjpegStream:
                 if frame is not None:
                     return frame
 
-            chunk = self._response.read(self._chunk_size)
-
-            self._buffer.extend(chunk)
-            if len(self._buffer) > self._max_buffer_size:
-                last_start = self._buffer.rfind(b"\xff\xd8")
-                if last_start == -1:
-                    self._buffer.clear()
-                else:
-                    del self._buffer[:last_start]
+            self._buffer.extend(self._response.read(self._chunk_size))
 
     def close(self) -> None:
         self._response.close()
@@ -140,54 +107,21 @@ def horizontal_bearing_deg(
     return math.degrees(math.atan2(-normalized_x, 1.0))
 
 
-def build_aruco_detector(dictionary_name: str) -> ArucoDetectorBundle:
-    if not hasattr(cv2, "aruco"):
-        raise ModuleNotFoundError(
-            "ArUco support requires OpenCV's contrib modules. Install `opencv-contrib-python`."
-        )
-
+def build_aruco_detector(dictionary_name: str) -> object:
     aruco = cv2.aruco
-    try:
-        dictionary_id = getattr(aruco, dictionary_name)
-    except AttributeError as exc:
-        raise ValueError(f"Unknown ArUco dictionary: {dictionary_name}") from exc
-
-    dictionary = aruco.getPredefinedDictionary(dictionary_id)
-    if hasattr(aruco, "DetectorParameters"):
-        parameters = aruco.DetectorParameters()
-    else:
-        parameters = aruco.DetectorParameters_create()
-
-    detector = None
-    if hasattr(aruco, "ArucoDetector"):
-        detector = aruco.ArucoDetector(dictionary, parameters)
-
-    return ArucoDetectorBundle(
-        dictionary=dictionary,
-        parameters=parameters,
-        detector=detector,
-    )
+    parameters = aruco.DetectorParameters()
+    dictionary = aruco.getPredefinedDictionary(getattr(aruco, dictionary_name))
+    return aruco.ArucoDetector(dictionary, parameters)
 
 
-def detect_aruco_markers(
-    detector_bundle: ArucoDetectorBundle, frame: "np.ndarray"
-) -> list[Detection]:
-    detections: list[Detection] = []
-
-    if detector_bundle.detector is not None:
-        corners_list, ids, _rejected = detector_bundle.detector.detectMarkers(frame)
-    else:
-        corners_list, ids, _rejected = cv2.aruco.detectMarkers(
-            frame,
-            detector_bundle.dictionary,
-            parameters=detector_bundle.parameters,
-        )
+def detect_aruco_markers(detector: object, frame: "np.ndarray") -> list[Detection]:
+    corners_list, ids, _rejected = detector.detectMarkers(frame)
 
     if ids is None:
-        return detections
+        return []
 
-    marker_ids = np.asarray(ids, dtype=np.int32).reshape(-1)
-    for marker_id, corners in zip(marker_ids, corners_list):
+    detections: list[Detection] = []
+    for marker_id, corners in zip(np.asarray(ids, dtype=np.int32).reshape(-1), corners_list):
         corner_array = np.asarray(corners, dtype=np.float32).reshape(4, 2)
         center = corner_array.mean(axis=0)
         detections.append(
@@ -203,17 +137,18 @@ def detect_aruco_markers(
 
 
 def select_detection(
-    detections: list[Detection], target_marker_id: Optional[int], min_area_px: float
-) -> Optional[Detection]:
-    filtered = [detection for detection in detections if detection.area_px >= min_area_px]
-    if not filtered:
-        return None
-
-    if target_marker_id is not None:
-        exact_matches = [d for d in filtered if d.marker_id == target_marker_id]
-        return max(exact_matches, key=lambda item: item.area_px) if exact_matches else None
-
-    return max(filtered, key=lambda item: item.area_px)
+    detections: list[Detection], target_marker_id: int | None, min_area_px: float
+) -> Detection | None:
+    return max(
+        (
+            detection
+            for detection in detections
+            if detection.area_px >= min_area_px
+            and (target_marker_id is None or detection.marker_id == target_marker_id)
+        ),
+        key=lambda detection: detection.area_px,
+        default=None,
+    )
 
 
 def estimate_marker_pose(
@@ -221,7 +156,7 @@ def estimate_marker_pose(
     marker_size_m: float,
     camera_matrix: "np.ndarray",
     distortion_coeffs: "np.ndarray",
-) -> tuple[Optional[float], Optional[float], Optional[float]]:
+) -> tuple[float, float] | None:
     half_size = marker_size_m / 2.0
     object_points = np.array(
         [
@@ -241,17 +176,15 @@ def estimate_marker_pose(
         flags=cv2.SOLVEPNP_ITERATIVE,
     )
     if not success:
-        return None, None, None
+        return None
 
     tx = float(tvec[0, 0])
     tz = float(tvec[2, 0])
 
     if tz <= 0.0:
-        return None, None, None
+        return None
 
-    forward_m = tz
-    left_m = -tx
-    return forward_m, left_m, math.hypot(forward_m, left_m)
+    return tz, -tx
 
 
 def measure_target(
@@ -259,7 +192,7 @@ def measure_target(
     frame_width: int,
     frame_height: int,
     camera_calibration: CameraCalibration,
-    marker_size_m: Optional[float],
+    marker_size_m: float | None,
     camera_forward_offset_m: float,
     camera_left_offset_m: float,
 ) -> VisualMeasurement:
@@ -274,17 +207,14 @@ def measure_target(
 
     if marker_size_m is not None and marker_size_m > 0.0:
         camera_matrix = camera_calibration.camera_matrix_for_frame(frame_width, frame_height)
-        pose_forward_m, pose_left_m, pose_distance_m = estimate_marker_pose(
+        pose = estimate_marker_pose(
             detection,
             marker_size_m,
             camera_matrix,
             camera_calibration.distortion_coeffs,
         )
-        if (
-            pose_forward_m is not None
-            and pose_left_m is not None
-            and pose_distance_m is not None
-        ):
+        if pose is not None:
+            pose_forward_m, pose_left_m = pose
             robot_forward_m = pose_forward_m + camera_forward_offset_m
             robot_left_m = pose_left_m + camera_left_offset_m
             angle_deg = math.degrees(math.atan2(robot_left_m, robot_forward_m))
@@ -301,8 +231,8 @@ def measure_target(
 
 def draw_overlay(
     frame: "np.ndarray",
-    detection: Optional[Detection],
-    measurement: Optional[VisualMeasurement],
+    detection: Detection | None,
+    measurement: VisualMeasurement | None,
     decision,
     settings,
 ) -> "np.ndarray":
@@ -371,7 +301,4 @@ def draw_overlay(
 
 
 def open_stream(stream_url: str, timeout_s: float) -> MjpegStream:
-    try:
-        return MjpegStream(stream_url, timeout_s)
-    except (URLError, TimeoutError, socket.timeout, OSError) as exc:
-        raise RuntimeError(f"Unable to open camera stream: {stream_url} ({exc})") from exc
+    return MjpegStream(stream_url, timeout_s)
