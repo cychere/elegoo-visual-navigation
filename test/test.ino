@@ -10,7 +10,7 @@ namespace
     constexpr unsigned long Loop_Period_Us = 1000000UL / Loop_Frequency_Hz;
     constexpr unsigned long Speed_Window_Us = 1000000UL;
     constexpr size_t Speed_Window_Sample_Capacity = static_cast<size_t>(Loop_Frequency_Hz) + 5;
-    constexpr int Gyro_Calibration_Samples = 200;
+    constexpr int Gyro_Calibration_Samples = 2000;
     constexpr int Yaw_Print_Precision = 6;
     constexpr size_t Command_Buffer_Max_Length = 48;
 
