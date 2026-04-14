@@ -33,10 +33,6 @@ namespace
     float yawDeg = 0.0f;
     float yawAngularSpeedDegPerSec = 0.0f;
     float forwardSpeedCmPerSec = 0.0f;
-    unsigned long yawSampleTimesUs[Speed_Window_Sample_Capacity] = {};
-    float yawSampleDeg[Speed_Window_Sample_Capacity] = {};
-    size_t yawSampleStart = 0;
-    size_t yawSampleCount = 0;
     unsigned long distanceSampleTimesUs[Speed_Window_Sample_Capacity] = {};
     uint16_t distanceSampleCm[Speed_Window_Sample_Capacity] = {};
     size_t distanceSampleStart = 0;
@@ -156,8 +152,6 @@ namespace
         gyroBias = calibrateGyro();
         yawDeg = 0.0f;
         yawAngularSpeedDegPerSec = 0.0f;
-        yawSampleStart = 0;
-        yawSampleCount = 0;
         lastYawUpdateUs = micros();
 
         Serial.print(F("Gyro Z bias: "));
@@ -169,31 +163,6 @@ namespace
     size_t nextSampleIndex(size_t start, size_t count)
     {
         return (start + count) % Speed_Window_Sample_Capacity;
-    }
-
-    void appendYawSample(unsigned long now, float yaw)
-    {
-        size_t sampleIndex = 0;
-
-        if (yawSampleCount < Speed_Window_Sample_Capacity)
-        {
-            sampleIndex = nextSampleIndex(yawSampleStart, yawSampleCount);
-            ++yawSampleCount;
-        }
-        else
-        {
-            sampleIndex = yawSampleStart;
-            yawSampleStart = nextSampleIndex(yawSampleStart, 1);
-        }
-
-        yawSampleTimesUs[sampleIndex] = now;
-        yawSampleDeg[sampleIndex] = yaw;
-
-        while (yawSampleCount > 1 && now - yawSampleTimesUs[yawSampleStart] > Speed_Window_Us)
-        {
-            yawSampleStart = nextSampleIndex(yawSampleStart, 1);
-            --yawSampleCount;
-        }
     }
 
     void appendDistanceSample(unsigned long now, uint16_t distanceCm)
@@ -239,25 +208,8 @@ namespace
 
         float deltaSeconds = deltaUs / 1000000.0f;
         float correctedGyroZ = gyro.gyro.z - gyroBias;
+        yawAngularSpeedDegPerSec = correctedGyroZ * RAD_TO_DEG_F;
         yawDeg += correctedGyroZ * RAD_TO_DEG_F * deltaSeconds;
-
-        appendYawSample(now, yawDeg);
-
-        if (yawSampleCount < 2)
-        {
-            yawAngularSpeedDegPerSec = 0.0f;
-            return;
-        }
-
-        unsigned long sampleDeltaUs = now - yawSampleTimesUs[yawSampleStart];
-        if (sampleDeltaUs == 0)
-        {
-            yawAngularSpeedDegPerSec = 0.0f;
-            return;
-        }
-
-        float sampleDeltaSeconds = sampleDeltaUs / 1000000.0f;
-        yawAngularSpeedDegPerSec = (yawDeg - yawSampleDeg[yawSampleStart]) / sampleDeltaSeconds;
     }
 
     void delayUntilNextLoop()
