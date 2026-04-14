@@ -1,8 +1,15 @@
 #include <Arduino.h>
+#include <Wire.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_MPU6050.h>
 
 namespace
 {
     constexpr unsigned long Serial_Baud_Rate = 115200;
+    constexpr unsigned long Loop_Frequency_Hz = 60;
+    constexpr unsigned long Loop_Period_Us = 1000000UL / Loop_Frequency_Hz;
+    constexpr int Gyro_Calibration_Samples = 200;
+    constexpr int Yaw_Print_Precision = 6;
     constexpr size_t Command_Buffer_Max_Length = 48;
 
     constexpr uint8_t Motor_PWMA = 5;
@@ -10,11 +17,25 @@ namespace
     constexpr uint8_t Motor_BIN1 = 8;
     constexpr uint8_t Motor_AIN1 = 7;
     constexpr uint8_t Motor_STBY = 3;
+    constexpr uint8_t Ultrasonic_TRIG_PIN = 13;
+    constexpr uint8_t Ultrasonic_ECHO_PIN = 12;
+    constexpr uint16_t Ultrasonic_MAX_DISTANCE = 400; // cm
+    constexpr float RAD_TO_DEG_F = 57.2957795f;
 
+    Adafruit_MPU6050 mpu;
     size_t commandBufferLength = 0;
     char commandBuffer[Command_Buffer_Max_Length + 1] = {};
     unsigned long motorStopAtMs = 0;
     bool motorRunning = false;
+    float gyroBias = 0.0f;
+    float yawDeg = 0.0f;
+    float yawAngularSpeedDegPerSec = 0.0f;
+    float forwardSpeedCmPerSec = 0.0f;
+    uint16_t lastDistanceCm = 0;
+    unsigned long lastDistanceUpdateUs = 0;
+    bool hasDistanceSample = false;
+    unsigned long lastYawUpdateUs = 0;
+    unsigned long nextLoopUs = 0;
 
     int clampSpeed(int speed)
     {
@@ -79,6 +100,139 @@ namespace
         analogWrite(Motor_PWMA, 0);
         analogWrite(Motor_PWMB, 0);
         digitalWrite(Motor_STBY, LOW);
+    }
+
+    void initUltrasonic()
+    {
+        pinMode(Ultrasonic_ECHO_PIN, INPUT);
+        pinMode(Ultrasonic_TRIG_PIN, OUTPUT);
+    }
+
+    uint16_t getDistanceCm()
+    {
+        constexpr unsigned long Echo_Timeout_Us = Ultrasonic_MAX_DISTANCE * 58UL * 2UL;
+
+        digitalWrite(Ultrasonic_TRIG_PIN, LOW);
+        delayMicroseconds(2);
+        digitalWrite(Ultrasonic_TRIG_PIN, HIGH);
+        delayMicroseconds(10);
+        digitalWrite(Ultrasonic_TRIG_PIN, LOW);
+
+        unsigned long pulseDurationUs = pulseIn(Ultrasonic_ECHO_PIN, HIGH, Echo_Timeout_Us);
+        return static_cast<uint16_t>(pulseDurationUs / 58UL);
+    }
+
+    float calibrateGyro()
+    {
+        float biasSum = 0.0f;
+
+        for (int sample = 0; sample < Gyro_Calibration_Samples; ++sample)
+        {
+            sensors_event_t acceleration, gyro, temperature;
+            mpu.getEvent(&acceleration, &gyro, &temperature);
+            biasSum += gyro.gyro.z;
+            delay(5);
+        }
+
+        return biasSum / Gyro_Calibration_Samples;
+    }
+
+    bool initMpu()
+    {
+        mpu.begin();
+        mpu.setGyroRange(MPU6050_RANGE_250_DEG);
+        mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
+        mpu.setAccelerometerRange(MPU6050_RANGE_2_G);
+
+        delay(100);
+
+        gyroBias = calibrateGyro();
+        yawDeg = 0.0f;
+        lastYawUpdateUs = micros();
+
+        Serial.print(F("Gyro Z bias: "));
+        Serial.println(gyroBias, 6);
+
+        return true;
+    }
+
+    void refreshYaw()
+    {
+        sensors_event_t acceleration, gyro, temperature;
+        mpu.getEvent(&acceleration, &gyro, &temperature);
+
+        unsigned long now = micros();
+        unsigned long deltaUs = now - lastYawUpdateUs;
+        lastYawUpdateUs = now;
+
+        float deltaSeconds = deltaUs / 1000000.0f;
+        float correctedGyroZ = gyro.gyro.z - gyroBias;
+        yawAngularSpeedDegPerSec = correctedGyroZ * RAD_TO_DEG_F;
+        yawDeg += yawAngularSpeedDegPerSec * deltaSeconds;
+    }
+
+    void delayUntilNextLoop()
+    {
+        long remainingUs = static_cast<long>(nextLoopUs - micros());
+
+        if (remainingUs > 0)
+        {
+            unsigned long remaining = static_cast<unsigned long>(remainingUs);
+            delay(remaining / 1000UL);
+            delayMicroseconds(static_cast<unsigned int>(remaining % 1000UL));
+        }
+
+        nextLoopUs += Loop_Period_Us;
+
+        if (static_cast<long>(micros() - nextLoopUs) >= 0)
+        {
+            nextLoopUs = micros() + Loop_Period_Us;
+        }
+    }
+
+    void sendReading(uint16_t distanceCm)
+    {
+        Serial.print(F("SENSOR "));
+        Serial.print(yawDeg, Yaw_Print_Precision);
+        Serial.print(F(" deg "));
+        Serial.print(distanceCm);
+        Serial.print(F(" cm "));
+        Serial.print(yawAngularSpeedDegPerSec, Yaw_Print_Precision);
+        Serial.print(F(" deg/s "));
+        Serial.print(forwardSpeedCmPerSec, Yaw_Print_Precision);
+        Serial.println(F(" cm/s"));
+    }
+
+    void refreshForwardSpeed(uint16_t distanceCm)
+    {
+        unsigned long now = micros();
+
+        if (distanceCm == 0)
+        {
+            hasDistanceSample = false;
+            forwardSpeedCmPerSec = 0.0f;
+            return;
+        }
+
+        if (!hasDistanceSample)
+        {
+            lastDistanceCm = distanceCm;
+            lastDistanceUpdateUs = now;
+            hasDistanceSample = true;
+            forwardSpeedCmPerSec = 0.0f;
+            return;
+        }
+
+        unsigned long deltaUs = now - lastDistanceUpdateUs;
+        if (deltaUs == 0)
+        {
+            return;
+        }
+
+        float deltaSeconds = deltaUs / 1000000.0f;
+        forwardSpeedCmPerSec = (static_cast<float>(lastDistanceCm) - distanceCm) / deltaSeconds;
+        lastDistanceCm = distanceCm;
+        lastDistanceUpdateUs = now;
     }
 
     void runTimedMotor(int left, int right, unsigned long durationSeconds)
@@ -171,10 +325,18 @@ void setup()
     Serial.setTimeout(10);
 
     initMotor();
+    initUltrasonic();
+    initMpu();
+    nextLoopUs = micros() + Loop_Period_Us;
 }
 
 void loop()
 {
+    delayUntilNextLoop();
+    refreshYaw();
+    uint16_t distanceCm = getDistanceCm();
+    refreshForwardSpeed(distanceCm);
+    sendReading(distanceCm);
     handleSerial();
     motorTimeout();
 }
