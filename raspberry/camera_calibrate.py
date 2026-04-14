@@ -70,72 +70,39 @@ def parse_args() -> argparse.Namespace:
 
 
 def resolve_image_paths(patterns: list[str]) -> list[Path]:
-    resolved: list[Path] = []
+    paths: list[Path] = []
     for pattern in patterns:
-        matches = sorted(Path(path) for path in glob.glob(pattern, recursive=True))
-        if matches:
-            resolved.extend(matches)
-            continue
-
         candidate = Path(pattern)
-        if candidate.is_file():
-            resolved.append(candidate)
+        matches = sorted(Path(path) for path in glob.glob(pattern, recursive=True))
+        paths.extend(matches or ([candidate] if candidate.is_file() else []))
 
-    unique_paths: list[Path] = []
-    seen: set[Path] = set()
-    for path in resolved:
-        normalized = path.resolve()
-        if normalized in seen:
-            continue
-        seen.add(normalized)
-        unique_paths.append(normalized)
-
-    return unique_paths
-
-
-def square_size_m_from_args(args: argparse.Namespace) -> float:
-    if args.square_size_m is not None:
-        square_size_m = float(args.square_size_m)
-    else:
-        square_size_m = float(args.square_size_mm) / 1000.0
-
-    if square_size_m <= 0.0:
-        raise SystemExit("Square size must be greater than zero.")
-
-    return square_size_m
-
-
-def build_object_points(pattern_cols: int, pattern_rows: int, square_size_m: float) -> np.ndarray:
-    grid = np.zeros((pattern_rows * pattern_cols, 3), dtype=np.float32)
-    grid[:, :2] = (
-        np.mgrid[0:pattern_cols, 0:pattern_rows].T.reshape(-1, 2) * square_size_m
-    )
-    return grid
+    return list(dict.fromkeys(path.resolve() for path in paths))
 
 
 def detect_corners(gray: np.ndarray, pattern_size: tuple[int, int]) -> np.ndarray | None:
     if hasattr(cv2, "findChessboardCornersSB"):
-        flags = cv2.CALIB_CB_EXHAUSTIVE | cv2.CALIB_CB_ACCURACY
-        found, corners = cv2.findChessboardCornersSB(gray, pattern_size, flags=flags)
+        found, corners = cv2.findChessboardCornersSB(
+            gray,
+            pattern_size,
+            flags=cv2.CALIB_CB_EXHAUSTIVE | cv2.CALIB_CB_ACCURACY,
+        )
         if found:
             return corners.astype(np.float32)
 
-    flags = cv2.CALIB_CB_ADAPTIVE_THRESH | cv2.CALIB_CB_NORMALIZE_IMAGE
-    found, corners = cv2.findChessboardCorners(gray, pattern_size, flags=flags)
+    found, corners = cv2.findChessboardCorners(
+        gray,
+        pattern_size,
+        flags=cv2.CALIB_CB_ADAPTIVE_THRESH | cv2.CALIB_CB_NORMALIZE_IMAGE,
+    )
     if not found:
         return None
 
-    criteria = (
-        cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER,
-        30,
-        0.001,
-    )
     refined = cv2.cornerSubPix(
         gray,
         corners,
         winSize=(11, 11),
         zeroZone=(-1, -1),
-        criteria=criteria,
+        criteria=(cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001),
     )
     return refined.astype(np.float32)
 
@@ -147,8 +114,19 @@ def main() -> int:
         raise SystemExit("No images matched the provided paths or glob patterns.")
 
     pattern_size = (args.pattern_cols, args.pattern_rows)
-    square_size_m = square_size_m_from_args(args)
-    object_template = build_object_points(args.pattern_cols, args.pattern_rows, square_size_m)
+    square_size_m = (
+        float(args.square_size_m)
+        if args.square_size_m is not None
+        else float(args.square_size_mm) / 1000.0
+    )
+    if square_size_m <= 0.0:
+        raise SystemExit("Square size must be greater than zero.")
+
+    object_template = np.zeros((args.pattern_rows * args.pattern_cols, 3), dtype=np.float32)
+    object_template[:, :2] = (
+        np.mgrid[0 : args.pattern_cols, 0 : args.pattern_rows].T.reshape(-1, 2)
+        * square_size_m
+    )
 
     object_points: list[np.ndarray] = []
     image_points: list[np.ndarray] = []

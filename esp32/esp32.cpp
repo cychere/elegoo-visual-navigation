@@ -1,11 +1,12 @@
 #include "esp32.hpp"
 
-void startCameraServer();
+constexpr uint32_t XCLK_FREQ_HZ = 20000000;
+constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 20000;
+constexpr uint16_t WIFI_CONNECT_RETRY_DELAY_MS = 300;
 
-void CameraWebServer::Init(void)
+camera_config_t makeCameraConfig()
 {
-    Serial.setDebugOutput(true);
-    camera_config_t config;
+    camera_config_t config = {};
     config.ledc_channel = LEDC_CHANNEL_0;
     config.ledc_timer = LEDC_TIMER_0;
     config.pin_d0 = 11;
@@ -20,53 +21,53 @@ void CameraWebServer::Init(void)
     config.pin_pclk = 13;
     config.pin_vsync = 6;
     config.pin_href = 7;
-    config.pin_sscb_sda = 4;
-    config.pin_sscb_scl = 5;
+    config.pin_sccb_sda = 4;
+    config.pin_sccb_scl = 5;
     config.pin_pwdn = -1;
     config.pin_reset = -1;
-    config.xclk_freq_hz = 20000000;
+    config.xclk_freq_hz = XCLK_FREQ_HZ;
     config.frame_size = FRAMESIZE_SVGA;
     config.pixel_format = PIXFORMAT_JPEG;
     config.grab_mode = CAMERA_GRAB_LATEST;
     config.fb_location = CAMERA_FB_IN_PSRAM;
     config.jpeg_quality = 10;
     config.fb_count = 2;
+    return config;
+}
 
+void configureFixedExposure()
+{
+    sensor_t *sensor = esp_camera_sensor_get();
+
+    sensor->set_exposure_ctrl(sensor, 0);
+    sensor->set_aec2(sensor, 0);
+    sensor->set_aec_value(sensor, 60);
+    sensor->set_gain_ctrl(sensor, 1);
+    sensor->set_gainceiling(sensor, (gainceiling_t)GAINCEILING_2X);
+}
+
+void CameraWebServer::begin()
+{
+    Serial.setDebugOutput(true);
+
+    camera_config_t config = makeCameraConfig();
     esp_camera_init(&config);
-
-    sensor_t *s = esp_camera_sensor_get();
-
-    s->set_exposure_ctrl(s, 0);
-    s->set_aec2(s, 0);
-    s->set_aec_value(s, 60);
-
-    s->set_gain_ctrl(s, 1);
-    s->set_gainceiling(s, (gainceiling_t)GAINCEILING_2X);
-
-    uint64_t chipid = ESP.getEfuseMac();
-    char string[10];
-    sprintf(string, "%04X", (uint16_t)(chipid >> 32));
-    String mac0_default = String(string);
-    sprintf(string, "%08X", (uint32_t)chipid);
-    String mac1_default = String(string);
-    String url = ssid + mac0_default + mac1_default;
-    const char *mac_default = url.c_str();
+    configureFixedExposure();
 
     WiFi.setTxPower(WIFI_POWER_19_5dBm);
     WiFi.mode(WIFI_STA);
     WiFi.setSleep(false);
-
     WiFi.begin(ssid, password);
 
     uint32_t t0 = millis();
     while (WiFi.status() != WL_CONNECTED)
     {
-        delay(300);
+        delay(WIFI_CONNECT_RETRY_DELAY_MS);
         Serial.print(".");
-        if (millis() - t0 > 20000)
+        if (millis() - t0 > WIFI_CONNECT_TIMEOUT_MS)
         {
-          Serial.println("\nWiFi connect timeout");
-          return;
+            Serial.println("\nWiFi connect timeout");
+            return;
         }
     }
 
@@ -74,7 +75,7 @@ void CameraWebServer::Init(void)
     Serial.print("IP: ");
     Serial.println(WiFi.localIP());
 
-    startCameraServer();
+    startCameraStreamServer();
 
     Serial.print("Camera Ready! Use 'http://");
     Serial.print(WiFi.localIP());
