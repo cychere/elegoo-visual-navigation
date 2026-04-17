@@ -7,8 +7,8 @@ def clamp(value: float, minimum: float, maximum: float) -> float:
 
 @dataclass(slots=True)
 class RobotCommand:
-    angle_deg: float
-    speed: float
+    turn_effort: float
+    speed_effort: float
 
 
 @dataclass(slots=True)
@@ -19,10 +19,10 @@ class WheelCommand:
 
 @dataclass(slots=True)
 class MixerSettings:
-    max_pwm: int = 255
-    min_pwm: int = 70
-    max_speed: float = 1.0
-    max_angle_deg: float = 75.0
+    max_pwm: int = 150
+    min_pwm: int = 27
+    max_speed_effort: float = 1.0
+    max_turn_effort: float = 75.0
     turn_gain: float = 1.0
     pivot_turn_gain: float = 0.65
     pivot_speed_threshold: float = 0.05
@@ -39,15 +39,15 @@ def _apply_pwm(value: float, min_pwm: int, max_pwm: int) -> int:
 
 def mix_drive_command(command: RobotCommand) -> WheelCommand:
     settings = MixerSettings()
-    speed = clamp(command.speed / settings.max_speed, -1.0, 1.0)
-    turn = clamp(command.angle_deg / settings.max_angle_deg, -1.0, 1.0)
+    speed_effort = clamp(command.speed_effort / settings.max_speed_effort, -1.0, 1.0)
+    turn_effort = clamp(command.turn_effort / settings.max_turn_effort, -1.0, 1.0)
 
-    if abs(speed) < settings.pivot_speed_threshold:
-        left = -turn * settings.pivot_turn_gain
-        right = turn * settings.pivot_turn_gain
+    if abs(speed_effort) < settings.pivot_speed_threshold:
+        left = -turn_effort * settings.pivot_turn_gain
+        right = turn_effort * settings.pivot_turn_gain
     else:
-        left = speed - (turn * settings.turn_gain)
-        right = speed + (turn * settings.turn_gain)
+        left = speed_effort - (turn_effort * settings.turn_gain)
+        right = speed_effort + (turn_effort * settings.turn_gain)
 
     scale = max(1.0, abs(left), abs(right))
     left /= scale

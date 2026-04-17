@@ -95,27 +95,24 @@ def compute_decision(
     now_s: float,
     settings: Settings,
 ) -> ControlDecision:
-    drive = RobotCommand(angle_deg=0.0, speed=0.0)
-    target_visible = measurement is not None
+    robot = RobotCommand(turn_effort=0.0, speed_effort=0.0)
 
     if measurement is not None:
-        drive = RobotCommand(
-            angle_deg=measurement.angle_deg,
-            speed=speed_from_target(measurement, sensor, settings),
-        )
-    elif (
-        sensor is not None
-        and remembered_target_heading_deg is not None
-        and now_s - remembered_at_s <= settings.target_memory_s
-    ):
-        drive = RobotCommand(
-            angle_deg=wrap_degrees(remembered_target_heading_deg - sensor.yaw_deg),
-            speed=0.0,
+        if measurement.distance_m is not None:
+            distance_error = measurement.distance_m - settings.target_distance_m
+            speed_effort = distance_pid.update(distance_error, now_s)
+        else:
+            speed_effort = 0.0
+            distance_pid.reset()
+
+        robot = RobotCommand(
+            turn_effort=heading_pid.update(wrap_degrees(measurement.angle_deg), now_s),
+            speed_effort=speed_effort,
         )
 
-    wheels = mix_drive_command(drive)
+    wheels = mix_drive_command(robot)
     return ControlDecision(
-        robot=drive,
+        robot=robot,
         wheels=wheels,
         sensor=sensor,
         target_visible=target_visible,
