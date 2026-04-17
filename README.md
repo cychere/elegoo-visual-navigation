@@ -66,7 +66,7 @@ Edit the `Settings` dataclass in `raspberry/navigation.py` before running:
 - `aruco_dictionary_name`: default `DICT_4X4_50`
 - `marker_size_m`: printed marker side length in meters, default `0.05`
 - `target_distance_m`: stopping distance from the marker, default `0.45`
-- PID values: `heading_kp`, `heading_ki`, `heading_kd`, `distance_kp`, `distance_ki`, `distance_kd`
+- PID values: `heading_kp`, `heading_ki`, `heading_kd`, `distance_kp`, `distance_ki`, `distance_kd`. Heading PID uses radians; preview and serial angles stay in degrees.
 - `show_preview`: OpenCV preview window
 
 ## Arduino Firmware

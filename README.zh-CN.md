@@ -66,7 +66,7 @@ python3 camera_calibrate.py "calibration/*.jpg" --square-size-mm 23
 - `aruco_dictionary_name`：默认 `DICT_4X4_50`
 - `marker_size_m`：打印目标码边长，单位为米，默认 `0.05`
 - `target_distance_m`：机器人与目标码的停止距离，默认 `0.45`
-- PID 参数：`heading_kp`、`heading_ki`、`heading_kd`、`distance_kp`、`distance_ki`、`distance_kd`
+- PID 参数：`heading_kp`、`heading_ki`、`heading_kd`、`distance_kp`、`distance_ki`、`distance_kd`。航向 PID 使用弧度；预览和串口角度仍使用度。
 - `show_preview`：OpenCV 预览窗口
 
 ## Arduino 固件

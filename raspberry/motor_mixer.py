@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass
 
 
@@ -22,7 +23,7 @@ class MixerSettings:
     max_pwm: int = 150
     min_pwm: int = 27
     max_speed_effort: float = 1.0
-    max_turn_effort: float = 75.0
+    max_turn_effort: float = math.radians(75.0)
     turn_gain: float = 1.0
     pivot_turn_gain: float = 0.65
     pivot_speed_threshold: float = 0.05

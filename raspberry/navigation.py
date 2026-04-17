@@ -15,7 +15,6 @@ from vision import (
     measure_target,
     open_stream,
     select_detection,
-    wrap_degrees,
 )
 
 
@@ -106,7 +105,7 @@ def compute_decision(
             distance_pid.reset()
 
         robot = RobotCommand(
-            turn_effort=heading_pid.update(wrap_degrees(measurement.angle_deg), now_s),
+            turn_effort=heading_pid.update(measurement.angle_rad, now_s),
             speed_effort=speed_effort,
         )
 

@@ -20,6 +20,7 @@ class Detection:
 @dataclass(slots=True)
 class VisualMeasurement:
     angle_deg: float
+    angle_rad: float
     marker_id: int
     center_x: float
     center_y: float
@@ -220,8 +221,11 @@ def measure_target(
             angle_deg = math.degrees(math.atan2(robot_left_m, robot_forward_m))
             distance_m = math.hypot(robot_forward_m, robot_left_m)
 
+    angle_deg = wrap_degrees(angle_deg)
+
     return VisualMeasurement(
-        angle_deg=wrap_degrees(angle_deg),
+        angle_deg=angle_deg,
+        angle_rad=math.radians(angle_deg),
         marker_id=detection.marker_id,
         center_x=detection.center_x,
         center_y=detection.center_y,
@@ -255,8 +259,8 @@ def draw_overlay(
     lines = [
         f"Stream: {settings.stream_url}",
         f"Target visible: {'yes' if decision.target_visible else 'no'}",
-        f"Robot angle: {decision.robot.angle_deg:+6.1f} deg",
-        f"Robot speed: {decision.robot.speed:.2f}",
+        f"Turn effort: {decision.robot.turn_effort:+.3f}",
+        f"Speed effort: {decision.robot.speed_effort:+.2f}",
         f"Wheels: L {decision.wheels.left_pwm:+4d} | R {decision.wheels.right_pwm:+4d}",
     ]
 
