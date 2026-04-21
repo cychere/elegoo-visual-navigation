@@ -258,6 +258,7 @@ def draw_overlay(
 
     lines = [
         f"Stream: {settings.stream_url}",
+        f"Mode: {decision.mode}",
         f"Target visible: {'yes' if decision.target_visible else 'no'}",
         f"Turn effort: {decision.robot.turn_effort:+.3f}",
         f"Speed effort: {decision.robot.speed_effort:+.2f}",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import cv2
+import math
 import time
 from typing import Optional
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ from vision import (
     measure_target,
     open_stream,
     select_detection,
+    wrap_degrees,
 )
 
 
@@ -24,7 +26,7 @@ class ControlDecision:
     wheels: WheelCommand
     sensor: Optional[SensorReading]
     target_visible: bool
-    target_distance_m: Optional[float]
+    mode: str
 
 
 @dataclass(slots=True)
@@ -48,32 +50,45 @@ class Settings:
     show_preview: bool = True
 
     target_distance_m: float = 0.45
-    distance_gain: float = 1.4
-    cruise_speed: float = 0.45
-    max_speed: float = 1.0
-    stop_distance_cm: int = 18
-    caution_distance_cm: int = 45
-    turn_in_place_angle_deg: float = 35.0
-    max_heading_for_speed_deg: float = 70.0
-    target_memory_s: float = 1.5
+    heading_kp: float = 1.0
+    heading_ki: float = 0.0
+    heading_kd: float = 0.05
+    distance_kp: float = 1.4
+    distance_ki: float = 0.0
+    distance_kd: float = 0.05
+
+    target_search_delay_s: float = 1.5
+    search_servo_step_deg: int = 30
+    search_servo_dwell_s: float = 1.0
+    servo_center_angle_deg: float = 72.0
+    search_turn_tolerance_deg: float = 5.0
 
 
-def clamp(value: float, minimum: float, maximum: float) -> float:
-    return max(minimum, min(value, maximum))
+@dataclass(slots=True)
+class PIDController:
+    kp: float
+    ki: float
+    kd: float
+    integral: float = 0.0
+    previous_error: Optional[float] = None
+    previous_time_s: Optional[float] = None
 
+    def reset(self) -> None:
+        self.integral = 0.0
+        self.previous_error = None
+        self.previous_time_s = None
 
-def smooth_angle_deg(
-    previous_deg: Optional[float], current_deg: float, alpha: float
-) -> float:
-    if previous_deg is None or alpha <= 0.0:
-        return wrap_degrees(current_deg)
+    def update(self, error: float, now_s: float) -> float:
+        derivative = 0.0
 
-    alpha = clamp(alpha, 0.0, 1.0)
-    previous_rad = math.radians(previous_deg)
-    current_rad = math.radians(current_deg)
-    x = (1.0 - alpha) * math.cos(previous_rad) + alpha * math.cos(current_rad)
-    y = (1.0 - alpha) * math.sin(previous_rad) + alpha * math.sin(current_rad)
-    return math.degrees(math.atan2(y, x))
+        if self.previous_time_s is not None and self.previous_error is not None:
+            dt_s = now_s - self.previous_time_s
+            self.integral += error * dt_s
+            derivative = (error - self.previous_error) / dt_s
+
+        self.previous_error = error
+        self.previous_time_s = now_s
+        return (self.kp * error) + (self.ki * self.integral) + (self.kd * derivative)
 
 
 def configured_target_marker_id(settings: Settings) -> Optional[int]:
@@ -84,6 +99,63 @@ def configured_target_marker_id(settings: Settings) -> Optional[int]:
         return None
 
     return int(settings.target_payload)
+
+
+def centered_servo_angle_deg(settings: Settings) -> int:
+    return int(round(settings.servo_center_angle_deg))
+
+
+def servo_heading_offset_deg(servo_angle_deg: int, settings: Settings) -> float:
+    return float(servo_angle_deg) - settings.servo_center_angle_deg
+
+
+def advance_search_servo(servo_angle_deg: int, direction: int, settings: Settings) -> tuple[int, int]:
+    next_angle_deg = servo_angle_deg + (direction * settings.search_servo_step_deg)
+
+    if next_angle_deg <= 0:
+        return 0, 1
+
+    if next_angle_deg >= 180:
+        return 180, -1
+
+    return next_angle_deg, direction
+
+
+def stationary_decision(
+    sensor: Optional[SensorReading],
+    measurement: Optional[VisualMeasurement],
+    mode: str,
+) -> ControlDecision:
+    robot = RobotCommand(turn_effort=0.0, speed_effort=0.0)
+    wheels = mix_drive_command(robot)
+    return ControlDecision(
+        robot=robot,
+        wheels=wheels,
+        sensor=sensor,
+        target_visible=measurement is not None,
+        mode=mode,
+    )
+
+
+def turning_decision(
+    yaw_error_deg: float,
+    sensor: Optional[SensorReading],
+    measurement: Optional[VisualMeasurement],
+    now_s: float,
+    heading_pid: PIDController,
+) -> ControlDecision:
+    robot = RobotCommand(
+        turn_effort=heading_pid.update(math.radians(yaw_error_deg), now_s),
+        speed_effort=0.0,
+    )
+    wheels = mix_drive_command(robot)
+    return ControlDecision(
+        robot=robot,
+        wheels=wheels,
+        sensor=sensor,
+        target_visible=measurement is not None,
+        mode="turning",
+    )
 
 
 def compute_decision(
@@ -114,13 +186,14 @@ def compute_decision(
         robot=robot,
         wheels=wheels,
         sensor=sensor,
-        target_visible=target_visible,
-        target_distance_m=measurement.distance_m if measurement is not None else None,
+        target_visible=measurement is not None,
+        mode="tracking",
     )
 
 
 def main() -> int:
     settings = Settings()
+    servo_center_angle_deg = centered_servo_angle_deg(settings)
     camera_calibration = load_camera_calibration(settings.camera_calibration_path)
     detector = build_aruco_detector(settings.aruco_dictionary_name)
     heading_pid = PIDController(
@@ -138,7 +211,14 @@ def main() -> int:
 
     with ArduinoLink(port=settings.serial_port, baud_rate=settings.baud_rate) as arduino:
         latest_sensor = arduino.wait_for_reading()
+        arduino.send_servo(servo_center_angle_deg)
         stream = open_stream(settings.stream_url, settings.stream_timeout_s)
+        mode = "tracking"
+        lost_target_since_s: Optional[float] = None
+        search_servo_angle_deg = servo_center_angle_deg
+        search_direction = -1
+        search_step_started_s = time.monotonic()
+        turn_target_yaw_deg: Optional[float] = None
 
         while True:
             latest_sensor = arduino.read_latest() or latest_sensor
@@ -164,14 +244,77 @@ def main() -> int:
                 )
 
             now_s = time.monotonic()
-            decision = compute_decision(
-                measurement=measurement,
-                sensor=latest_sensor,
-                now_s=now_s,
-                heading_pid=heading_pid,
-                distance_pid=distance_pid,
-                settings=settings,
-            )
+            decision = stationary_decision(latest_sensor, measurement, mode)
+
+            if mode == "tracking":
+                if measurement is not None:
+                    lost_target_since_s = None
+                    decision = compute_decision(
+                        measurement=measurement,
+                        sensor=latest_sensor,
+                        now_s=now_s,
+                        heading_pid=heading_pid,
+                        distance_pid=distance_pid,
+                        settings=settings,
+                    )
+                else:
+                    if lost_target_since_s is None:
+                        lost_target_since_s = now_s
+
+                    if now_s - lost_target_since_s >= settings.target_search_delay_s:
+                        mode = "searching"
+                        heading_pid.reset()
+                        distance_pid.reset()
+                        search_servo_angle_deg, search_direction = advance_search_servo(
+                            servo_center_angle_deg,
+                            -1,
+                            settings,
+                        )
+                        search_step_started_s = now_s
+                        arduino.send_servo(search_servo_angle_deg)
+                        decision = stationary_decision(latest_sensor, measurement, mode)
+
+            elif mode == "searching":
+                if measurement is not None:
+                    target_heading_deg = wrap_degrees(
+                        servo_heading_offset_deg(search_servo_angle_deg, settings)
+                        + measurement.angle_deg
+                    )
+                    mode = "turning"
+                    heading_pid.reset()
+                    distance_pid.reset()
+                    arduino.send_servo(servo_center_angle_deg)
+                    search_servo_angle_deg = servo_center_angle_deg
+                    turn_target_yaw_deg = latest_sensor.yaw_deg + target_heading_deg
+                    decision = stationary_decision(latest_sensor, measurement, mode)
+                else:
+                    if now_s - search_step_started_s >= settings.search_servo_dwell_s:
+                        search_servo_angle_deg, search_direction = advance_search_servo(
+                            search_servo_angle_deg,
+                            search_direction,
+                            settings,
+                        )
+                        search_step_started_s = now_s
+                        arduino.send_servo(search_servo_angle_deg)
+
+            elif mode == "turning":
+                yaw_error_deg = wrap_degrees(turn_target_yaw_deg - latest_sensor.yaw_deg)
+                if abs(yaw_error_deg) <= settings.search_turn_tolerance_deg:
+                    mode = "tracking"
+                    turn_target_yaw_deg = None
+                    heading_pid.reset()
+                    distance_pid.reset()
+                    lost_target_since_s = None if measurement is not None else now_s
+                    decision = stationary_decision(latest_sensor, measurement, mode)
+                else:
+                    decision = turning_decision(
+                        yaw_error_deg=yaw_error_deg,
+                        sensor=latest_sensor,
+                        measurement=measurement,
+                        now_s=now_s,
+                        heading_pid=heading_pid,
+                    )
+
             arduino.send_motor(decision.wheels.left_pwm, decision.wheels.right_pwm)
 
             if not settings.show_preview:

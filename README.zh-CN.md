@@ -2,6 +2,8 @@
 
 这是用于 ELEGOO Smart Robot Car 的视觉导航软件。机器人通过 ESP32 摄像头视频流检测 ArUco 目标码，Raspberry Pi 估计目标方向和距离，然后通过串口向 Arduino Uno 发送车轮 PWM 指令，由 Arduino 控制电机并读取车载传感器。
 
+现在，当目标消失一段可配置时间后，Raspberry Pi 会按固定步进角度扫描摄像头舵机重新寻找目标；找到后会先将舵机回中，再让机器人原地旋转到对应方向，然后恢复正常导航。
+
 英文版：[README.md](README.md)
 
 ## 系统组成
@@ -67,6 +69,11 @@ python3 camera_calibrate.py "calibration/*.jpg" --square-size-mm 23
 - `marker_size_m`：打印目标码边长，单位为米，默认 `0.05`
 - `target_distance_m`：机器人与目标码的停止距离，默认 `0.45`
 - PID 参数：`heading_kp`、`heading_ki`、`heading_kd`、`distance_kp`、`distance_ki`、`distance_kd`。航向 PID 使用弧度；预览和串口角度仍使用度。
+- `target_search_delay_s`：目标连续丢失多久后开始舵机搜索
+- `search_servo_step_deg`：舵机搜索的步进角度
+- `search_servo_dwell_s`：舵机在每个搜索角度停留的时间
+- `servo_forward_angle_deg`：摄像头正前方对应的舵机角度。默认 `72.0`，因此 `0` 表示右前方，`180` 表示左后方。
+- `search_turn_tolerance_deg`：搜索阶段找到目标后，机器人原地对准时使用的偏航误差结束阈值
 - `show_preview`：OpenCV 预览窗口
 
 ## Arduino 固件
