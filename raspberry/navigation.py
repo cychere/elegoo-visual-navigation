@@ -46,7 +46,6 @@ class Settings:
     camera_left_offset_m: float = 0.0
 
     min_area_px: float = 500.0
-    smoothing: float = 0.2
     show_preview: bool = True
 
     target_distance_m: float = 0.45
@@ -161,9 +160,9 @@ def turning_decision(
 def compute_decision(
     measurement: Optional[VisualMeasurement],
     sensor: Optional[SensorReading],
-    remembered_target_heading_deg: Optional[float],
-    remembered_at_s: float,
     now_s: float,
+    heading_pid: PIDController,
+    distance_pid: PIDController,
     settings: Settings,
 ) -> ControlDecision:
     robot = RobotCommand(turn_effort=0.0, speed_effort=0.0)
@@ -180,6 +179,9 @@ def compute_decision(
             turn_effort=heading_pid.update(measurement.angle_rad, now_s),
             speed_effort=speed_effort,
         )
+    else:
+        heading_pid.reset()
+        distance_pid.reset()
 
     wheels = mix_drive_command(robot)
     return ControlDecision(
@@ -207,7 +209,6 @@ def main() -> int:
         kd=settings.distance_kd,
     )
     target_marker_id = configured_target_marker_id(settings)
-    marker_size_m = settings.marker_size_m
 
     with ArduinoLink(port=settings.serial_port, baud_rate=settings.baud_rate) as arduino:
         latest_sensor = arduino.wait_for_reading()
