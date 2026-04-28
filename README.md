@@ -2,7 +2,7 @@
 
 Visual navigation software for an ELEGOO Smart Robot Car. The robot uses an ESP32 camera stream to detect an ArUco target marker, estimates the target bearing and distance on a Raspberry Pi, then sends wheel PWM commands to an Arduino Uno that drives the motors and reads onboard sensors.
 
-When the target disappears, the Raspberry Pi can now wait for a configurable delay, sweep the camera servo in fixed increments to reacquire the marker, then recenter the camera and rotate the robot in place to the found heading before resuming normal navigation.
+When the target disappears, the robot waits for a configurable delay, sweeps the camera servo in fixed increments to reacquire the marker, then recenters the camera and rotates in place to the found heading before resuming normal navigation.
 
 Simplified Chinese version: [README.zh-CN.md](README.zh-CN.md)
 
