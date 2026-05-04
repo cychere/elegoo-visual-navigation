@@ -21,6 +21,8 @@ constexpr char stationPassword[] = "cyBer751465!";
 
 constexpr char accessPointSsid[] = "ElegooCamera";
 constexpr char accessPointPassword[] = "elegoo1234";
+constexpr uint8_t accessPointIp[] = {192, 168, 4, 1};
+constexpr uint8_t accessPointSubnet[] = {255, 255, 255, 0};
 }
 
 class CameraWebServer

@@ -52,8 +52,9 @@ bool connectStation(IPAddress &streamIp)
     WiFi.setSleep(false);
     WiFi.begin(WifiSettings::stationSsid, WifiSettings::stationPassword);
 
+    IPAddress unsetIp(0, 0, 0, 0);
     uint32_t t0 = millis();
-    while (WiFi.status() != WL_CONNECTED)
+    while (WiFi.status() != WL_CONNECTED || WiFi.localIP() == unsetIp)
     {
         delay(WIFI_CONNECT_RETRY_DELAY_MS);
         Serial.print(".");
@@ -73,6 +74,19 @@ void startAccessPoint(IPAddress &streamIp)
 {
     WiFi.mode(WIFI_AP);
     WiFi.setSleep(false);
+    IPAddress apIp(
+        WifiSettings::accessPointIp[0],
+        WifiSettings::accessPointIp[1],
+        WifiSettings::accessPointIp[2],
+        WifiSettings::accessPointIp[3]
+    );
+    IPAddress apSubnet(
+        WifiSettings::accessPointSubnet[0],
+        WifiSettings::accessPointSubnet[1],
+        WifiSettings::accessPointSubnet[2],
+        WifiSettings::accessPointSubnet[3]
+    );
+    WiFi.softAPConfig(apIp, apIp, apSubnet);
     WiFi.softAP(WifiSettings::accessPointSsid, WifiSettings::accessPointPassword);
 
     Serial.println("\nWiFi access point started");
