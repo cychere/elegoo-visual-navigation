@@ -6,14 +6,27 @@
 
 void startCameraStreamServer();
 
+enum class WifiMode
+{
+    Station,
+    AccessPoint
+};
+
+namespace WifiSettings
+{
+constexpr WifiMode mode = WifiMode::AccessPoint;
+
+constexpr char stationSsid[] = "Asus";
+constexpr char stationPassword[] = "cyBer751465!";
+
+constexpr char accessPointSsid[] = "ElegooCamera";
+constexpr char accessPointPassword[] = "elegoo1234";
+}
+
 class CameraWebServer
 {
 public:
     void begin();
-
-private:
-    const char *ssid = "Asus";
-    const char *password = "cyBer751465!";
 };
 
 #endif

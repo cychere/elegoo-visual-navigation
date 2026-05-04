@@ -33,7 +33,7 @@ class ControlDecision:
 class Settings:
     serial_port: str = "/dev/ttyUSB0"
     baud_rate: int = 115200
-    stream_url: str = "http://192.168.50.48/stream"
+    stream_url: str = "http://192.168.4.1/stream"
     stream_timeout_s: float = 5.0
 
     target_marker_id: Optional[int] = None

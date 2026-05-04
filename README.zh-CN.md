@@ -102,7 +102,7 @@ python3 camera_calibrate.py "calibration/*.jpg" --square-size-mm 23
 - Partition Scheme：`8M with spiffs (3MB APP/1.5MB SPIFFS)`
 - PSRAM：`OPI PSRAM`
 
-在 `esp32/esp32.hpp` 中设置 Wi-Fi SSID 和密码，上传固件，在 Wi-Fi 网络中找到 ESP32 的 IP 地址，然后将 `raspberry/navigation.py` 的 `Settings.stream_url` 设置为 `http://<esp32-ip>/stream`。
+在 `esp32/esp32.hpp` 中将 `WifiSettings::mode` 设置为 `WifiMode::AccessPoint` 或 `WifiMode::Station`。接入点模式下，将 Raspberry Pi 连接到 `WifiSettings::accessPointSsid` 配置的 ESP32 网络，并将 `raspberry/navigation.py` 的 `Settings.stream_url` 设置为 `http://192.168.4.1/stream`。站点模式下，设置 `WifiSettings::stationSsid` 和 `WifiSettings::stationPassword`，上传固件，在该 Wi-Fi 网络中找到 ESP32 的 IP 地址，并将 `Settings.stream_url` 设置为 `http://<esp32-ip>/stream`。
 
 ## 运行清单
 
@@ -110,6 +110,6 @@ python3 camera_calibrate.py "calibration/*.jpg" --square-size-mm 23
 2. 将 `esp32/esp32.ino` 上传到 ESP32 摄像头板。
 3. 生成或复制 `camera_calibration.npz` 到 `raspberry/`。
 4. 用 USB 将 Arduino Uno 连接到 Raspberry Pi。
-5. 将 Raspberry Pi 和 ESP32 连接到同一个 Wi-Fi 网络。
+5. 将 Raspberry Pi 连接到 ESP32 接入点，或在站点模式下将 Raspberry Pi 和 ESP32 连接到同一个 Wi-Fi 网络。
 6. 更新 `raspberry/navigation.py` 中的 `Settings`。
 7. 从 `raspberry/` 目录运行 `python3 navigation.py`。

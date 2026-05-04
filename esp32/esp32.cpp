@@ -46,18 +46,11 @@ void configureFixedExposure()
     sensor->set_gainceiling(sensor, (gainceiling_t)GAINCEILING_2X);
 }
 
-void CameraWebServer::begin()
+bool connectStation(IPAddress &streamIp)
 {
-    Serial.setDebugOutput(true);
-
-    camera_config_t config = makeCameraConfig();
-    esp_camera_init(&config);
-    configureFixedExposure();
-
-    WiFi.setTxPower(WIFI_POWER_19_5dBm);
     WiFi.mode(WIFI_STA);
     WiFi.setSleep(false);
-    WiFi.begin(ssid, password);
+    WiFi.begin(WifiSettings::stationSsid, WifiSettings::stationPassword);
 
     uint32_t t0 = millis();
     while (WiFi.status() != WL_CONNECTED)
@@ -67,17 +60,58 @@ void CameraWebServer::begin()
         if (millis() - t0 > WIFI_CONNECT_TIMEOUT_MS)
         {
             Serial.println("\nWiFi connect timeout");
-            return;
+            return false;
         }
     }
 
     Serial.println("\nWiFi connected");
+    streamIp = WiFi.localIP();
+    return true;
+}
+
+void startAccessPoint(IPAddress &streamIp)
+{
+    WiFi.mode(WIFI_AP);
+    WiFi.setSleep(false);
+    WiFi.softAP(WifiSettings::accessPointSsid, WifiSettings::accessPointPassword);
+
+    Serial.println("\nWiFi access point started");
+    Serial.print("SSID: ");
+    Serial.println(WifiSettings::accessPointSsid);
+    streamIp = WiFi.softAPIP();
+}
+
+bool startWifi(IPAddress &streamIp)
+{
+    if (WifiSettings::mode == WifiMode::AccessPoint)
+    {
+        startAccessPoint(streamIp);
+        return true;
+    }
+
+    return connectStation(streamIp);
+}
+
+void CameraWebServer::begin()
+{
+    Serial.setDebugOutput(true);
+
+    camera_config_t config = makeCameraConfig();
+    esp_camera_init(&config);
+    configureFixedExposure();
+
+    WiFi.setTxPower(WIFI_POWER_19_5dBm);
+    IPAddress streamIp;
+    if (!startWifi(streamIp))
+    {
+        return;
+    }
     Serial.print("IP: ");
-    Serial.println(WiFi.localIP());
+    Serial.println(streamIp);
 
     startCameraStreamServer();
 
     Serial.print("Camera Ready! Use 'http://");
-    Serial.print(WiFi.localIP());
+    Serial.print(streamIp);
     Serial.println("/stream' to connect");
 }

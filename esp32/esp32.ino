@@ -8,7 +8,8 @@ CameraWebServer camera;
 
 void updateStatusLed()
 {
-    digitalWrite(STATUS_LED_PIN, WiFi.status() == WL_CONNECTED ? STATUS_LED_ON_LEVEL : STATUS_LED_OFF_LEVEL);
+    bool networkReady = WifiSettings::mode == WifiMode::AccessPoint || WiFi.status() == WL_CONNECTED;
+    digitalWrite(STATUS_LED_PIN, networkReady ? STATUS_LED_ON_LEVEL : STATUS_LED_OFF_LEVEL);
 }
 
 void setup()

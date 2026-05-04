@@ -102,7 +102,7 @@ Open `esp32/esp32.ino` in the Arduino IDE. Set the board options listed in `esp3
 - Partition Scheme: `8M with spiffs (3MB APP/1.5MB SPIFFS)`
 - PSRAM: `OPI PSRAM`
 
-Set the Wi-Fi SSID and password in `esp32/esp32.hpp`, upload the firmware, find the ESP32 IP address on the Wi-Fi network, and set `Settings.stream_url` in `raspberry/navigation.py` to `http://<esp32-ip>/stream`.
+Set `WifiSettings::mode` in `esp32/esp32.hpp` to `WifiMode::AccessPoint` or `WifiMode::Station`. In access point mode, connect the Raspberry Pi to the ESP32 network configured by `WifiSettings::accessPointSsid` and set `Settings.stream_url` in `raspberry/navigation.py` to `http://192.168.4.1/stream`. In station mode, set `WifiSettings::stationSsid` and `WifiSettings::stationPassword`, upload the firmware, find the ESP32 IP address on that Wi-Fi network, and set `Settings.stream_url` to `http://<esp32-ip>/stream`.
 
 ## Run Checklist
 
@@ -110,6 +110,6 @@ Set the Wi-Fi SSID and password in `esp32/esp32.hpp`, upload the firmware, find 
 2. Upload `esp32/esp32.ino` to the ESP32 camera board.
 3. Generate or copy `camera_calibration.npz` into `raspberry/`.
 4. Connect the Arduino Uno to the Raspberry Pi over USB.
-5. Put the Raspberry Pi and ESP32 on the same Wi-Fi network.
+5. Connect the Raspberry Pi to the ESP32 access point or put the Raspberry Pi and ESP32 on the same station-mode Wi-Fi network.
 6. Update `Settings` in `raspberry/navigation.py`.
 7. Run `python3 navigation.py` from the `raspberry/` directory.
