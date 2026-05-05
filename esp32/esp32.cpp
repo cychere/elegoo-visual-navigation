@@ -26,11 +26,11 @@ camera_config_t makeCameraConfig()
     config.pin_pwdn = -1;
     config.pin_reset = -1;
     config.xclk_freq_hz = XCLK_FREQ_HZ;
-    config.frame_size = FRAMESIZE_SVGA;
+    config.frame_size = FRAMESIZE_XGA;
     config.pixel_format = PIXFORMAT_JPEG;
     config.grab_mode = CAMERA_GRAB_LATEST;
     config.fb_location = CAMERA_FB_IN_PSRAM;
-    config.jpeg_quality = 10;
+    config.jpeg_quality = 8;
     config.fb_count = 2;
     return config;
 }

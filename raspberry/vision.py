@@ -109,6 +109,13 @@ def horizontal_bearing_deg(
 def build_aruco_detector(dictionary_name: str) -> object:
     aruco = cv2.aruco
     parameters = aruco.DetectorParameters()
+    parameters.adaptiveThreshWinSizeMin = 3
+    parameters.adaptiveThreshWinSizeMax = 35
+    parameters.adaptiveThreshWinSizeStep = 4
+    parameters.minMarkerPerimeterRate = 0.02
+    parameters.cornerRefinementMethod = aruco.CORNER_REFINE_SUBPIX
+    parameters.errorCorrectionRate = 0.7
+
     dictionary = aruco.getPredefinedDictionary(getattr(aruco, dictionary_name))
     return aruco.ArucoDetector(dictionary, parameters)
 

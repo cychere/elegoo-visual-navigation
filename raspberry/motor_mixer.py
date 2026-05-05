@@ -20,7 +20,7 @@ class WheelCommand:
 
 @dataclass(slots=True)
 class MixerSettings:
-    max_pwm: int = 100
+    max_pwm: int = 150
     min_pwm: int = 40
     max_speed_effort: float = 1.0
     max_turn_effort: float = math.radians(75.0)
