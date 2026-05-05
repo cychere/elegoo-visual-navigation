@@ -181,7 +181,8 @@ class RecedingHorizonController:
             self.lost_target_since_s = None
             if (
                 measurement.distance_m is not None
-                and measurement.distance_m <= self.settings.target_distance_m
+                and abs(measurement.distance_m - self.settings.target_distance_m)
+                <= self.settings.target_distance_tolerance_m
             ):
                 self.visited_target_ids.add(measurement.marker_id)
                 if len(self.visited_target_ids) == len(self.target_ids):

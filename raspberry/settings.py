@@ -22,11 +22,12 @@ class Settings:
     min_area_px: float = 500.0
     show_preview: bool = True
 
-    target_distance_m: float = 0.45
-    heading_kp: float = 1.0
+    target_distance_m: float = 0.20
+    target_distance_tolerance_m: float = 0.03
+    heading_kp: float = 0.5
     heading_ki: float = 0.0
     heading_kd: float = 0.05
-    distance_kp: float = 1.4
+    distance_kp: float = 1.2
     distance_ki: float = 0.0
     distance_kd: float = 0.05
 

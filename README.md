@@ -71,6 +71,7 @@ Edit the `Settings` dataclass in `raspberry/settings.py` before running:
 - `aruco_dictionary_name`: default `DICT_4X4_50`
 - `marker_size_m`: printed marker side length in meters, default `0.05`
 - `target_distance_m`: stopping distance from the marker, default `0.45`
+- `target_distance_tolerance_m`: distance-error range that counts as reached, default `0.03`
 - PID values: `heading_kp`, `heading_ki`, `heading_kd`, `distance_kp`, `distance_ki`, `distance_kd`. Heading PID uses radians; preview and serial angles stay in degrees.
 - `target_search_delay_s`: how long the target must stay missing before servo search starts
 - `search_servo_step_deg`: servo search increment in degrees

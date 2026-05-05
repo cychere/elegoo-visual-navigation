@@ -71,6 +71,7 @@ python3 camera_calibrate.py "calibration/*.jpg" --square-size-mm 23
 - `aruco_dictionary_name`：默认 `DICT_4X4_50`
 - `marker_size_m`：打印目标码边长，单位为米，默认 `0.05`
 - `target_distance_m`：机器人与目标码的停止距离，默认 `0.45`
+- `target_distance_tolerance_m`：判定为已到达的距离误差范围，默认 `0.03`
 - PID 参数：`heading_kp`、`heading_ki`、`heading_kd`、`distance_kp`、`distance_ki`、`distance_kd`。航向 PID 使用弧度；预览和串口角度仍使用度。
 - `target_search_delay_s`：目标连续丢失多久后开始舵机搜索
 - `search_servo_step_deg`：舵机搜索的步进角度

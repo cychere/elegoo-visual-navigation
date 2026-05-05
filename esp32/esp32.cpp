@@ -41,9 +41,9 @@ void configureFixedExposure()
 
     sensor->set_exposure_ctrl(sensor, 0);
     sensor->set_aec2(sensor, 0);
-    sensor->set_aec_value(sensor, 60);
-    sensor->set_gain_ctrl(sensor, 1);
-    sensor->set_gainceiling(sensor, (gainceiling_t)GAINCEILING_2X);
+    sensor->set_aec_value(sensor, 200);
+    sensor->set_gain_ctrl(sensor, 0);
+    sensor->set_agc_gain(sensor, 4);
 }
 
 bool connectStation(IPAddress &streamIp)
