@@ -25,8 +25,6 @@ class MixerSettings:
     max_speed_effort: float = 1.0
     max_turn_effort: float = math.radians(75.0)
     turn_gain: float = 1.0
-    pivot_turn_gain: float = 0.65
-    pivot_speed_threshold: float = 0.05
 
 
 def _apply_pwm(value: float, min_pwm: int, max_pwm: int) -> int:
@@ -43,12 +41,8 @@ def mix_drive_command(command: RobotCommand) -> WheelCommand:
     speed_effort = clamp(command.speed_effort / settings.max_speed_effort, -1.0, 1.0)
     turn_effort = clamp(command.turn_effort / settings.max_turn_effort, -1.0, 1.0)
 
-    if abs(speed_effort) < settings.pivot_speed_threshold:
-        left = -turn_effort * settings.pivot_turn_gain
-        right = turn_effort * settings.pivot_turn_gain
-    else:
-        left = speed_effort - (turn_effort * settings.turn_gain)
-        right = speed_effort + (turn_effort * settings.turn_gain)
+    left = speed_effort - (turn_effort * settings.turn_gain)
+    right = speed_effort + (turn_effort * settings.turn_gain)
 
     scale = max(1.0, abs(left), abs(right))
     left /= scale
@@ -56,5 +50,5 @@ def mix_drive_command(command: RobotCommand) -> WheelCommand:
 
     return WheelCommand(
         left_pwm=_apply_pwm(left, settings.min_pwm, settings.max_pwm),
-        right_pwm=_apply_pwm(right, settings.min_pwm, settings.max_pwm)
+        right_pwm=_apply_pwm(right, settings.min_pwm, settings.max_pwm),
     )

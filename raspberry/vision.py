@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.request import Request, urlopen
 
+from angles import wrap_degrees
+
 
 @dataclass(slots=True)
 class Detection:
@@ -87,10 +89,6 @@ class MjpegStream:
         self._response.close()
 
 
-def wrap_degrees(angle_deg: float) -> float:
-    return (angle_deg + 180.0) % 360.0 - 180.0
-
-
 def horizontal_bearing_deg(
     center_x: float,
     center_y: float,
@@ -135,21 +133,6 @@ def detect_aruco_markers(detector: object, frame: "np.ndarray") -> list[Detectio
             )
         )
     return detections
-
-
-def select_detection(
-    detections: list[Detection], target_marker_id: int | None, min_area_px: float
-) -> Detection | None:
-    return max(
-        (
-            detection
-            for detection in detections
-            if detection.area_px >= min_area_px
-            and (target_marker_id is None or detection.marker_id == target_marker_id)
-        ),
-        key=lambda detection: detection.area_px,
-        default=None,
-    )
 
 
 def estimate_marker_pose(

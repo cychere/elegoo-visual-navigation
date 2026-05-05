@@ -14,7 +14,7 @@ enum class WifiMode
 
 namespace WifiSettings
 {
-constexpr WifiMode mode = WifiMode::AccessPoint;
+constexpr WifiMode mode = WifiMode::Station;
 
 constexpr char stationSsid[] = "Asus";
 constexpr char stationPassword[] = "cyBer751465!";

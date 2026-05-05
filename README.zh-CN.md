@@ -2,7 +2,7 @@
 
 这是用于 ELEGOO Smart Robot Car 的视觉导航软件。机器人通过 ESP32 摄像头视频流检测 ArUco 目标码，Raspberry Pi 估计目标方向和距离，然后通过串口向 Arduino Uno 发送车轮 PWM 指令，由 Arduino 控制电机并读取车载传感器。
 
-当目标消失一段时间后，机器人会按固定步进角度扫描摄像头舵机重新寻找目标；找到后会先将舵机回中，再让机器人原地旋转到对应方向，然后恢复正常导航。
+Raspberry Pi 运行滚动时域控制器。它用摄像头舵机搜索未访问目标，选择当前可见目标中估计行驶代价最低的目标，转向该目标，用 PID 跟踪目标，并在每次访问完成后重新规划。所有配置目标访问完成后，机器人停止。
 
 英文版：[README.md](README.md)
 
@@ -21,11 +21,13 @@
 3. Raspberry Pi 通过串口向 Arduino 发送 `MOTOR <left_pwm> <right_pwm>` 指令。
 4. Arduino 输出 `SENSOR <yaw_deg> <distance_cm>` 传感器读数，并执行电机或舵机指令。
 
+控制器模式包括 `stop`、`searching`、`turning` 和 `tracking`。
+
 ## 仓库结构
 
 - `elegoo/`：Arduino Uno 固件。`elegoo.ino` 包含主循环、串口协议、电机超时、超声波读取、舵机指令和陀螺仪偏航角跟踪。
 - `esp32/`：ESP32 摄像头固件。`esp32.ino` 启动 Wi-Fi 和摄像头服务器；`app_httpd.cpp` 提供实时视频流。
-- `raspberry/`：Raspberry Pi 软件。`navigation.py` 是主控制循环，`vision.py` 处理视频流和 ArUco 检测，`motor_mixer.py` 将机器人运动指令转换为车轮 PWM，`arduino_io.py` 处理串口通信。
+- `raspberry/`：Raspberry Pi 软件。`main.py` 是主程序，`navigation.py` 负责运行循环，`controller.py` 选择目标和模式，`vision.py` 处理视频流和 ArUco 检测，`motor_mixer.py` 将机器人运动指令转换为车轮 PWM，`arduino_io.py` 处理串口通信。
 - `test/`：独立测试草图和脚本。
 
 ## Raspberry Pi 设置
@@ -39,17 +41,17 @@ source .venv/bin/activate
 pip install numpy pyserial opencv-contrib-python
 ```
 
-从 `raspberry/` 目录运行导航程序，这样 `navigation.py` 可以加载 `camera_calibration.npz`：
+从 `raspberry/` 目录运行导航程序，这样 `main.py` 可以加载 `camera_calibration.npz`：
 
 ```bash
-python3 navigation.py
+python3 main.py
 ```
 
 在预览窗口中按 `q` 或 `Esc` 停止程序。
 
 ## 摄像头标定
 
-`navigation.py` 需要 `raspberry/camera_calibration.npz`。使用 9x6 内角点棋盘格照片运行标定脚本生成该文件：
+`main.py` 需要 `raspberry/camera_calibration.npz`。使用 9x6 内角点棋盘格照片运行标定脚本生成该文件：
 
 ```bash
 cd raspberry
@@ -60,11 +62,12 @@ python3 camera_calibrate.py "calibration/*.jpg" --square-size-mm 23
 
 ## 配置
 
-运行前编辑 `raspberry/navigation.py` 中的 `Settings` 数据类：
+运行前编辑 `raspberry/settings.py` 中的 `Settings` 数据类：
 
 - `serial_port`：Arduino 串口设备，默认 `/dev/ttyUSB0`
 - `stream_url`：ESP32 MJPEG 视频流 URL
-- `target_marker_id`：要跟踪的目标码 ID；`None` 表示选择面积最大的有效目标码
+- `number_of_targets`：要访问的目标数量
+- `target_marker_ids`：目标对应的 ArUco 标记 ID，每个目标一个 ID
 - `aruco_dictionary_name`：默认 `DICT_4X4_50`
 - `marker_size_m`：打印目标码边长，单位为米，默认 `0.05`
 - `target_distance_m`：机器人与目标码的停止距离，默认 `0.45`
@@ -72,7 +75,7 @@ python3 camera_calibrate.py "calibration/*.jpg" --square-size-mm 23
 - `target_search_delay_s`：目标连续丢失多久后开始舵机搜索
 - `search_servo_step_deg`：舵机搜索的步进角度
 - `search_servo_dwell_s`：舵机在每个搜索角度停留的时间
-- `servo_forward_angle_deg`：摄像头正前方对应的舵机角度。默认 `72.0`，因此 `0` 表示右前方，`180` 表示左后方。
+- `servo_center_angle_deg`：摄像头正前方对应的舵机角度。默认 `72.0`，因此 `0` 表示右前方，`180` 表示左后方。
 - `search_turn_tolerance_deg`：搜索阶段找到目标后，机器人原地对准时使用的偏航误差结束阈值
 - `show_preview`：OpenCV 预览窗口
 
@@ -102,7 +105,7 @@ python3 camera_calibrate.py "calibration/*.jpg" --square-size-mm 23
 - Partition Scheme：`8M with spiffs (3MB APP/1.5MB SPIFFS)`
 - PSRAM：`OPI PSRAM`
 
-在 `esp32/esp32.hpp` 中将 `WifiSettings::mode` 设置为 `WifiMode::AccessPoint` 或 `WifiMode::Station`。接入点模式下，将 Raspberry Pi 连接到 `WifiSettings::accessPointSsid` 配置的 ESP32 网络，并将 `raspberry/navigation.py` 的 `Settings.stream_url` 设置为 `http://192.168.4.1/stream`。站点模式下，设置 `WifiSettings::stationSsid` 和 `WifiSettings::stationPassword`，上传固件，在该 Wi-Fi 网络中找到 ESP32 的 IP 地址，并将 `Settings.stream_url` 设置为 `http://<esp32-ip>/stream`。
+在 `esp32/esp32.hpp` 中将 `WifiSettings::mode` 设置为 `WifiMode::AccessPoint` 或 `WifiMode::Station`。接入点模式下，将 Raspberry Pi 连接到 `WifiSettings::accessPointSsid` 配置的 ESP32 网络，并将 `raspberry/settings.py` 的 `Settings.stream_url` 设置为 `http://192.168.4.1/stream`。站点模式下，设置 `WifiSettings::stationSsid` 和 `WifiSettings::stationPassword`，上传固件，在该 Wi-Fi 网络中找到 ESP32 的 IP 地址，并将 `Settings.stream_url` 设置为 `http://<esp32-ip>/stream`。
 
 ## 运行清单
 
@@ -111,5 +114,5 @@ python3 camera_calibrate.py "calibration/*.jpg" --square-size-mm 23
 3. 生成或复制 `camera_calibration.npz` 到 `raspberry/`。
 4. 用 USB 将 Arduino Uno 连接到 Raspberry Pi。
 5. 将 Raspberry Pi 连接到 ESP32 接入点，或在站点模式下将 Raspberry Pi 和 ESP32 连接到同一个 Wi-Fi 网络。
-6. 更新 `raspberry/navigation.py` 中的 `Settings`。
-7. 从 `raspberry/` 目录运行 `python3 navigation.py`。
+6. 更新 `raspberry/settings.py` 中的 `Settings`。
+7. 从 `raspberry/` 目录运行 `python3 main.py`。
