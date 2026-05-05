@@ -33,6 +33,6 @@ class Settings:
 
     target_search_delay_s: float = 2
     search_servo_step_deg: int = 30
-    search_servo_dwell_s: float = 1.5
+    search_servo_dwell_s: float = 1.2
     servo_center_angle_deg: float = 72.0
     search_turn_tolerance_deg: float = 5.0
