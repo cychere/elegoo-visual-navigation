@@ -21,12 +21,6 @@ MODE_TURNING = "turning"
 class TargetObservation:
     marker_id: int
     bearing_deg: float
-    distance_m: float | None
-    area_px: float
-
-    def score(self) -> tuple[float, float, float]:
-        distance = self.distance_m if self.distance_m is not None else float("inf")
-        return distance, abs(self.bearing_deg), -self.area_px
 
 
 @dataclass(slots=True)
@@ -36,14 +30,14 @@ class ControllerUpdate:
 
 
 @dataclass(slots=True)
-class RecedingHorizonController:
+class SequentialTargetController:
     settings: Settings
     mode: str = MODE_STOP
     active_target_id: int | None = None
     turn_target_yaw_deg: float | None = None
     lost_target_since_s: float | None = None
-    visited_target_ids: set[int] = field(default_factory=set)
-    search_observations: dict[int, TargetObservation] = field(default_factory=dict)
+    target_index: int = 0
+    search_observation: TargetObservation | None = None
     search_angles_deg: tuple[int, ...] = field(init=False)
     search_index: int = 0
     search_step_started_s: float = 0.0
@@ -56,7 +50,7 @@ class RecedingHorizonController:
 
     @property
     def target_ids(self) -> tuple[int, ...]:
-        return self.settings.target_marker_ids[: self.settings.number_of_targets]
+        return self.settings.target_marker_ids
 
     def start(self, now_s: float) -> ControllerUpdate:
         return self._begin_search(now_s)
@@ -82,19 +76,12 @@ class RecedingHorizonController:
 
         return ControllerUpdate()
 
-    def _remaining_target_ids(self) -> tuple[int, ...]:
-        return tuple(
-            marker_id
-            for marker_id in self.target_ids
-            if marker_id not in self.visited_target_ids
-        )
-
     def _begin_search(self, now_s: float) -> ControllerUpdate:
         self.mode = MODE_SEARCHING
         self.active_target_id = None
         self.turn_target_yaw_deg = None
         self.lost_target_since_s = None
-        self.search_observations.clear()
+        self.search_observation = None
         self.search_index = 0
         self.search_step_started_s = now_s
         return ControllerUpdate(
@@ -102,24 +89,21 @@ class RecedingHorizonController:
             reset_control=True,
         )
 
-    def _record_search_observations(
+    def _record_search_observation(
         self,
         detections: dict[int, Detection],
         measurements: dict[int, VisualMeasurement],
     ) -> None:
-        for marker_id in self._remaining_target_ids():
-            measurement = measurements.get(marker_id)
-            detection = detections.get(marker_id)
-            if measurement is not None and detection is not None:
-                self.search_observations[marker_id] = TargetObservation(
-                    marker_id=marker_id,
-                    bearing_deg=wrap_degrees(
-                        self._servo_heading_offset_deg()
-                        + measurement.angle_deg
-                    ),
-                    distance_m=measurement.distance_m,
-                    area_px=detection.area_px,
-                )
+        marker_id = self.target_ids[self.target_index]
+        measurement = measurements.get(marker_id)
+        if measurement is not None and detections.get(marker_id) is not None:
+            self.search_observation = TargetObservation(
+                marker_id=marker_id,
+                bearing_deg=wrap_degrees(
+                    self._servo_heading_offset_deg()
+                    + measurement.angle_deg
+                ),
+            )
 
     def _update_searching(
         self,
@@ -128,18 +112,15 @@ class RecedingHorizonController:
         sensor: SensorReading,
         now_s: float,
     ) -> ControllerUpdate:
-        self._record_search_observations(detections, measurements)
+        self._record_search_observation(detections, measurements)
 
-        if self.search_observations.keys() >= set(self._remaining_target_ids()):
-            return self._choose_next_target(sensor)
+        if self.search_observation is not None:
+            return self._turn_to_search_observation(sensor, self.search_observation)
 
         if now_s - self.search_step_started_s < self.settings.search_servo_dwell_s:
             return ControllerUpdate()
 
         if self.search_index == len(self.search_angles_deg) - 1:
-            if self.search_observations:
-                return self._choose_next_target(sensor)
-
             self.search_index = 0
         else:
             self.search_index += 1
@@ -147,11 +128,11 @@ class RecedingHorizonController:
         self.search_step_started_s = now_s
         return ControllerUpdate(servo_angle_deg=self.search_angles_deg[self.search_index])
 
-    def _choose_next_target(self, sensor: SensorReading) -> ControllerUpdate:
-        observation = min(
-            self.search_observations.values(),
-            key=lambda candidate: candidate.score(),
-        )
+    def _turn_to_search_observation(
+        self,
+        sensor: SensorReading,
+        observation: TargetObservation,
+    ) -> ControllerUpdate:
         self.mode = MODE_TURNING
         self.active_target_id = observation.marker_id
         self.turn_target_yaw_deg = sensor.yaw_deg + observation.bearing_deg
@@ -184,8 +165,8 @@ class RecedingHorizonController:
                 and abs(measurement.distance_m - self.settings.target_distance_m)
                 <= self.settings.target_distance_tolerance_m
             ):
-                self.visited_target_ids.add(measurement.marker_id)
-                if len(self.visited_target_ids) == len(self.target_ids):
+                self.target_index += 1
+                if self.target_index == len(self.target_ids):
                     self.mode = MODE_STOP
                     self.active_target_id = None
                     return ControllerUpdate(reset_control=True)

@@ -66,8 +66,7 @@ Edit the `Settings` dataclass in `raspberry/settings.py` before running:
 
 - `serial_port`: Arduino serial device, default `/dev/ttyUSB0`
 - `stream_url`: ESP32 MJPEG stream URL
-- `number_of_targets`: number of targets to visit
-- `target_marker_ids`: ArUco marker IDs for the targets, one ID per target
+- `target_marker_ids`: ArUco marker IDs to visit, in visit order
 - `aruco_dictionary_name`: default `DICT_4X4_50`
 - `marker_size_m`: printed marker side length in meters, default `0.05`
 - `target_distance_m`: stopping distance from the marker, default `0.45`

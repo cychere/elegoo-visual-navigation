@@ -12,7 +12,7 @@ from controller import (
     MODE_TRACKING,
     MODE_TURNING,
     ControllerUpdate,
-    RecedingHorizonController,
+    SequentialTargetController,
 )
 from motor_mixer import RobotCommand, WheelCommand, mix_drive_command
 from pid import PIDController
@@ -126,7 +126,7 @@ class NavigationRunner:
             ki=settings.distance_ki,
             kd=settings.distance_kd,
         )
-        self.controller = RecedingHorizonController(settings)
+        self.controller = SequentialTargetController(settings)
 
     def run(self) -> int:
         with ArduinoLink(

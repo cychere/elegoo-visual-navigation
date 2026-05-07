@@ -66,8 +66,7 @@ python3 camera_calibrate.py "calibration/*.jpg" --square-size-mm 23
 
 - `serial_port`：Arduino 串口设备，默认 `/dev/ttyUSB0`
 - `stream_url`：ESP32 MJPEG 视频流 URL
-- `number_of_targets`：要访问的目标数量
-- `target_marker_ids`：目标对应的 ArUco 标记 ID，每个目标一个 ID
+- `target_marker_ids`：按访问顺序排列的 ArUco 标记 ID
 - `aruco_dictionary_name`：默认 `DICT_4X4_50`
 - `marker_size_m`：打印目标码边长，单位为米，默认 `0.05`
 - `target_distance_m`：机器人与目标码的停止距离，默认 `0.45`

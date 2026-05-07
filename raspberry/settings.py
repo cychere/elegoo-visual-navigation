@@ -10,7 +10,6 @@ class Settings:
     stream_url: str = "http://192.168.50.48/stream"
     stream_timeout_s: float = 5.0
 
-    number_of_targets: int = 1
     target_marker_ids: tuple[int, ...] = (6,)
     aruco_dictionary_name: str = "DICT_4X4_50"
     marker_size_m: float | None = 0.05
