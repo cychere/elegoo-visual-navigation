@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from angles import wrap_degrees
 from settings import Settings
 
 if TYPE_CHECKING:
@@ -15,6 +14,10 @@ MODE_STOP = "stop"
 MODE_TRACKING = "tracking"
 MODE_SEARCHING = "searching"
 MODE_TURNING = "turning"
+
+
+def wrap_degrees(angle_deg: float) -> float:
+    return (angle_deg + 180.0) % 360.0 - 180.0
 
 
 @dataclass(slots=True)

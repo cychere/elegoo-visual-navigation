@@ -7,8 +7,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-from angles import wrap_degrees
-
 
 @dataclass(slots=True)
 class Detection:
@@ -46,6 +44,10 @@ class CameraCalibration:
         scaled[1, 1] *= scale_y
         scaled[1, 2] *= scale_y
         return scaled
+
+
+def wrap_degrees(angle_deg: float) -> float:
+    return (angle_deg + 180.0) % 360.0 - 180.0
 
 
 def load_camera_calibration(calibration_path: str | Path) -> CameraCalibration:
